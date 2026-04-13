@@ -1,6 +1,5 @@
 #!/bin/sh
-# Intercepts and strictly removes the deprecated -vol argument that jonas747/dca structurally injects rigidly, causing EOF crashes in modern Alpine versions safely natively!
-
+# Intercepts and strictly removes the deprecated -vol argument that jonas747/dca structurally injects rigidly
 for arg do
     shift
     if [ "$skip" = "1" ]; then
@@ -16,5 +15,7 @@ for arg do
     set -- "$@" "$arg"
 done
 
-# Actively proxy directly back into the core FFMPEG mapped perfectly natively
-exec /usr/bin/ffmpeg "$@"
+# Actively proxy directly back into the core FFMPEG natively.
+# We physically append -nostats inherently to perfectly suppress the FFMPEG 6+ telemetry
+# that physically crashes the dca fmt.Sscanf legacy parser loop completely!
+exec /usr/bin/ffmpeg -nostats "$@"
