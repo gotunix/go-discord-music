@@ -33,8 +33,11 @@ package player
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"os/exec"
 	"sync"
+	"os"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/jonas747/dca"
@@ -42,14 +45,15 @@ import (
 	"go-discord-music/youtube"
 )
 
+// Session represents an entirely localized physical boundary cleanly tracking a single Discord server's execution state explicitly.
 type Session struct {
 	GuildID      string
-	VoiceClient  *discordgo.VoiceConnection
+	VoiceClient  *discordgo.VoiceConnection // Physical WebSocket mapping block to the Voice Channel natively.
 	Queue        []*youtube.Track
-	CurrentTrack *youtube.Track
+	CurrentTrack *youtube.Track // Currently parsing track loop directly.
 	IsPlaying    bool
 	TextChannel  string
-	Volume       int
+	Volume       int // Native integer [0, 500] explicitly mapping FFMPEG audio output percentages!
 	
 	Mu           sync.Mutex
 	Stream       *dca.StreamingSession
@@ -62,6 +66,7 @@ var (
 	muMap    sync.Mutex
 )
 
+// GetSession extracts the localized physical memory pointer for a specific server (GuildID) inherently preventing all singleton block logic completely!
 func GetSession(guildID string) *Session {
 	muMap.Lock()
 	defer muMap.Unlock()
@@ -108,18 +113,32 @@ func (s *Session) Leave() {
 	s.CurrentTrack = nil
 }
 
+// AddQueue mathematically appends a newly extracted YouTube payload strictly inside the server boundary completely.
 func (s *Session) AddQueue(track *youtube.Track) {
 	s.Mu.Lock()
 	s.Queue = append(s.Queue, track)
 	s.Mu.Unlock()
 }
 
+// ClearQueue completely nukes all subsequent array elements directly.
 func (s *Session) ClearQueue() {
 	s.Mu.Lock()
 	s.Queue = []*youtube.Track{}
 	s.Mu.Unlock()
 }
 
+// ShuffleQueue organically randomizes the elements residing within the executing Queue securely across memory.
+func (s *Session) ShuffleQueue() {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	if len(s.Queue) > 1 {
+		rand.Shuffle(len(s.Queue), func(i, j int) {
+			s.Queue[i], s.Queue[j] = s.Queue[j], s.Queue[i]
+		})
+	}
+}
+
+// Skip seamlessly writes into the underlying channels mathematically slicing off the active DCA stream securely.
 func (s *Session) Skip() bool {
 	if s.IsPlaying {
 		s.skipChan <- true
@@ -128,6 +147,7 @@ func (s *Session) Skip() bool {
 	return false
 }
 
+// Stop cleanly cuts execution completely natively terminating the queue mappings seamlessly.
 func (s *Session) Stop() {
 	s.ClearQueue()
 	if s.IsPlaying {
@@ -135,6 +155,7 @@ func (s *Session) Stop() {
 	}
 }
 
+// SetPaused strictly bridges execution into the raw DCA frame array statically pausing delivery into UDP channels implicitly.
 func (s *Session) SetPaused(pause bool) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -185,24 +206,20 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 		target = track.URL
 	}
 
-	ytdlp := exec.Command("yt-dlp", "-f", "bestaudio/best", "-q", "-o", "-", target)
-	stdout, err := ytdlp.StdoutPipe()
-	if err != nil {
-		log.Printf("Failed configuring stdout proxy: %v", err)
+	// Native fix: Youtube blocks FFMPEG standard pipes randomly without robust reconnect headers.
+	// Bypassing directly by cleanly archiving to a local cache volume just like the python structure natively did!
+	os.MkdirAll("cache", os.ModePerm)
+	cacheFile := fmt.Sprintf("cache/track_%d.m4a", time.Now().UnixNano())
+
+	ytdlp := exec.Command("yt-dlp", "-f", "m4a/bestaudio/best", "-q", "-o", cacheFile, target)
+	if err := ytdlp.Run(); err != nil {
+		log.Printf("yt-dlp explicitly failed downloading structural payload to cache: %v", err)
 		return
 	}
+	// Clean up local footprint upon completion automatically!
+	defer os.Remove(cacheFile)
 
-	if err := ytdlp.Start(); err != nil {
-		log.Printf("Failed invoking yt-dlp physical wrapper: %v", err)
-		return
-	}
-	defer func() {
-		if ytdlp.Process != nil {
-			ytdlp.Process.Kill()
-		}
-	}()
-
-	encodeSession, err := dca.EncodeMem(stdout, options)
+	encodeSession, err := dca.EncodeFile(cacheFile, options)
 	if err != nil {
 		log.Printf("Failed encoding dynamically OPUS map : %v", err)
 		return
