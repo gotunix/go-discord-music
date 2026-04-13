@@ -92,14 +92,17 @@ func Extract(url string) (*Track, error) {
 	return nil, err
 }
 
-func ExtractPlaylistAsync(url string, ch chan<- *Track, doneChan chan<- bool) {
+func ExtractPlaylistAsync(url string, shuffle bool, ch chan<- *Track, doneChan chan<- bool) {
 	log.Printf("Extracting underlying parsed Playlist natively asynchronously: %s", url)
 	args := []string{
 		"--dump-json",
 		"--flat-playlist",
 		"--no-warnings",
-		url,
 	}
+	if shuffle {
+		args = append(args, "--playlist-random")
+	}
+	args = append(args, url)
 	cmd := exec.Command("yt-dlp", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

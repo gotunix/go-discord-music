@@ -32,6 +32,7 @@ package bot
 
 import (
 	"fmt"
+	"math/rand"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -59,7 +60,7 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	switch cmd {
 	case "play", "p":
-		cmdPlay(s, m, args, sess)
+		cmdPlay(s, m, args, sess, true)
 	case "skip", "s", "next":
 		cmdSkip(s, m, sess)
 	case "previous", "prev":
@@ -117,7 +118,7 @@ func cmdLeave(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Ses
 	s.ChannelMessageSend(m.ChannelID, "👋 Unbound successfully.")
 }
 
-func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session) {
+func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session, shuffle bool) {
 	if len(args) < 2 {
 		s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!play <URL or Search>`")
 		return
@@ -141,7 +142,7 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 		ch := make(chan *youtube.Track, 250)
 		doneChan := make(chan bool)
 
-		go youtube.ExtractPlaylistAsync(query, ch, doneChan)
+		go youtube.ExtractPlaylistAsync(query, shuffle, ch, doneChan)
 
 		s.ChannelMessageSend(m.ChannelID, "⏳ Intercepting playlist structures asynchronously...")
 
@@ -300,6 +301,13 @@ func cmdLoadQueue(s *discordgo.Session, m *discordgo.MessageCreate, args []strin
 	if len(q) == 0 {
 		s.ChannelMessageSend(m.ChannelID, "❌ Could not retrieve extraction schema locally.")
 		return
+	}
+
+	// Intrinsically identically dynamically fundamentally scramble the arrays structurally!
+	if len(q) > 1 {
+		rand.Shuffle(len(q), func(i, j int) {
+			q[i], q[j] = q[j], q[i]
+		})
 	}
 
 	state, err := s.State.VoiceState(m.GuildID, m.Author.ID)
