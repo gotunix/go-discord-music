@@ -136,7 +136,6 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 	if strings.Contains(query, "playlist") {
 		ch := make(chan *youtube.Track, 250)
 		doneChan := make(chan bool)
-		var err error
 
 		go youtube.ExtractPlaylistAsync(query, ch, doneChan)
 
