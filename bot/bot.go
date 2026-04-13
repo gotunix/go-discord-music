@@ -66,6 +66,8 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		cmdPrevious(s, m, sess)
 	case "shuffle":
 		cmdShuffle(s, m, sess)
+	case "move", "m":
+		cmdMove(s, m, args, sess)
 	case "pause":
 		cmdPause(s, m, sess)
 	case "resume":
@@ -385,4 +387,28 @@ func cmdResume(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Se
 func cmdShuffle(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
 	sess.ShuffleQueue()
 	s.ChannelMessageSend(m.ChannelID, "🔀 Queue structure completely randomized naturally.")
+}
+
+func cmdMove(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session) {
+	if len(args) < 3 {
+		s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!move <from> <to>` (e.g. `!move 5 2`)")
+		return
+	}
+	
+	from, err1 := strconv.Atoi(args[1])
+	to, err2 := strconv.Atoi(args[2])
+	if err1 != nil || err2 != nil {
+		s.ChannelMessageSend(m.ChannelID, "❌ Indices must strictly map natively to integer structs.")
+		return
+	}
+	
+	// Shift functionally over to native zero-based matrix
+	from--
+	to--
+	
+	if sess.Move(from, to) {
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Actively physically relocated sequence natively from `%d` seamlessly to `%d` organically.", from+1, to+1))
+	} else {
+		s.ChannelMessageSend(m.ChannelID, "❌ Physical index falls outside absolute queue matrix bounds.")
+	}
 }

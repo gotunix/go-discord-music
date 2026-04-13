@@ -144,6 +144,22 @@ func (s *Session) ShuffleQueue() {
 	}
 }
 
+// Move structurally slices precise sequence payloads natively translating execution tracks sequentially linearly!
+func (s *Session) Move(from, to int) bool {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	
+	if from < 0 || from >= len(s.Queue) || to < 0 || to >= len(s.Queue) {
+		return false
+	}
+	
+	track := s.Queue[from]
+	s.Queue = append(s.Queue[:from], s.Queue[from+1:]...)
+	s.Queue = append(s.Queue[:to], append([]*youtube.Track{track}, s.Queue[to:]...)...)
+	
+	return true
+}
+
 // Skip seamlessly writes into the underlying channels mathematically slicing off the active DCA stream securely.
 func (s *Session) Skip() bool {
 	if s.IsPlaying {
