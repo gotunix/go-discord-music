@@ -38,6 +38,7 @@ import (
 	"sync"
 	"os"
 	"time"
+	"path/filepath"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/jonas747/dca"
@@ -209,13 +210,21 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	// Native fix: Youtube blocks FFMPEG standard pipes randomly without robust reconnect headers.
 	// Bypassing directly by cleanly archiving to a local cache volume just like the python structure natively did!
 	os.MkdirAll("cache", os.ModePerm)
-	cacheFile := fmt.Sprintf("cache/track_%d.m4a", time.Now().UnixNano())
+	cacheBase := fmt.Sprintf("cache/track_%d", time.Now().UnixNano())
 
-	ytdlp := exec.Command("yt-dlp", "-f", "m4a/bestaudio/best", "-q", "-o", cacheFile, target)
+	ytdlp := exec.Command("yt-dlp", "-f", "bestaudio/best", "-q", "-o", cacheBase+".%(ext)s", target)
 	if err := ytdlp.Run(); err != nil {
 		log.Printf("yt-dlp explicitly failed downloading structural payload to cache: %v", err)
 		return
 	}
+	
+	matches, _ := filepath.Glob(cacheBase + ".*")
+	if len(matches) == 0 {
+		log.Printf("Failed explicitly mapping yt-dlp formatted extension map entirely!")
+		return
+	}
+	cacheFile := matches[0]
+
 	// Clean up local footprint upon completion automatically!
 	defer os.Remove(cacheFile)
 
