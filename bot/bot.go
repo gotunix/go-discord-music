@@ -60,7 +60,7 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	switch cmd {
 	case "play", "p":
 		cmdPlay(s, m, args, sess)
-	case "skip", "s":
+	case "skip", "s", "next":
 		cmdSkip(s, m, sess)
 	case "shuffle":
 		cmdShuffle(s, m, sess)

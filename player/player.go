@@ -32,6 +32,7 @@ package player
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"os/exec"
@@ -232,6 +233,9 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	// Clean up local footprint upon completion automatically!
 	defer os.Remove(cacheFile)
 
+	// Explicitly completely muzzle legacy DCA telemetry structural logging completely!
+	dca.Logger = log.New(io.Discard, "", 0)
+
 	encodeSession, err := dca.EncodeFile(cacheFile, options)
 	if err != nil {
 		log.Printf("Failed encoding dynamically OPUS map : %v", err)
@@ -242,6 +246,9 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	// Discord officially ignores all incoming UDP packets natively unless Speaking is true.
 	s.VoiceClient.Speaking(true)
 	defer s.VoiceClient.Speaking(false)
+
+	// DAVE (E2EE) mathematically requires a minor stabilization window cleanly intercepting initial keys!
+	time.Sleep(1 * time.Second)
 
 	done := make(chan error)
 	stream := dca.NewStream(encodeSession, s.VoiceClient, done)
