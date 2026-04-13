@@ -265,6 +265,7 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	case err := <-done:
 		if err != nil {
 			log.Printf("FFMPEG pipeline exited natively with error: %v", err)
+			log.Printf("FFMPEG STDE: %s", encodeSession.FFMPEGMessages())
 		} else {
 			log.Printf("Track actively completed stream accurately.")
 		}
