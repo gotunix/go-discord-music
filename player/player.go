@@ -200,7 +200,11 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	options.RawOutput = true
 	options.Bitrate = 96
 	options.Application = "audio"
-	options.Volume = int((float64(s.Volume) / 100.0) * 256)
+
+	// Native fix: The dca library natively passes -vol which is entirely deprecated in FFMPEG 8.0+.
+	// We force the structural map to skip `-vol` by mapping 256 organically, and seamlessly inject the modern AudioFilter syntax instead!
+	options.Volume = 256
+	options.AudioFilter = fmt.Sprintf("volume=%f", float64(s.Volume)/100.0)
 
 	target := track.Webpage
 	if target == "" {
