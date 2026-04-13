@@ -61,6 +61,8 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	switch cmd {
 	case "play", "p":
 		cmdPlay(s, m, args, sess, true)
+	case "search":
+		cmdSearch(s, m, args, sess)
 	case "skip", "s", "next":
 		cmdSkip(s, m, sess)
 	case "previous", "prev":
@@ -124,6 +126,33 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 		return
 	}
 
+	query := strings.Join(args[1:], " ")
+
+	// Native search mapping parameter block mapping dynamically
+	if idx, err := strconv.Atoi(query); err == nil {
+		sess.Mu.Lock()
+		if len(sess.SearchMemory) > 0 && idx > 0 && idx <= len(sess.SearchMemory) {
+			targetTrack := sess.SearchMemory[idx-1]
+			sess.SearchMemory = nil // Clean memory explicitly cleanly
+			sess.Mu.Unlock()
+			
+			state, err2 := s.State.VoiceState(m.GuildID, m.Author.ID)
+			if err2 != nil && sess.VoiceClient == nil {
+				s.ChannelMessageSend(m.ChannelID, "❌ Join a voice channel first directly natively.")
+				return
+			}
+			if sess.VoiceClient == nil {
+				sess.Join(s, m.GuildID, state.ChannelID)
+			}
+			
+			sess.AddQueue(targetTrack)
+			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Mapped exactly right directly over search block: **%s**.", targetTrack.Title))
+			sess.PlayQueue(s)
+			return
+		}
+		sess.Mu.Unlock()
+	}
+
 	state, err := s.State.VoiceState(m.GuildID, m.Author.ID)
 	if err != nil && sess.VoiceClient == nil {
 		s.ChannelMessageSend(m.ChannelID, "❌ Join a voice channel first.")
@@ -134,7 +163,6 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 		sess.Join(s, m.GuildID, state.ChannelID)
 	}
 
-	query := strings.Join(args[1:], " ")
 	s.ChannelMessageSend(m.ChannelID, "⏳ Locating manifest streams dynamically...")
 
 	var tracks []*youtube.Track
@@ -194,6 +222,35 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 	
 	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Mapped **%d** frames directly into queue block.", len(tracks)))
 	sess.PlayQueue(s)
+}
+
+func cmdSearch(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session) {
+	if len(args) < 2 {
+		s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!search <query>`")
+		return
+	}
+	
+	query := strings.Join(args[1:], " ")
+	s.ChannelMessageSend(m.ChannelID, "⏳ Scraping exact dynamic parameter mappings structurally from YouTube organically...")
+	
+	tracks, err := youtube.Search(query, 20)
+	if err != nil || len(tracks) == 0 {
+		s.ChannelMessageSend(m.ChannelID, "❌ Native execution structurally completely failed explicitly.")
+		return
+	}
+	
+	sess.Mu.Lock()
+	sess.SearchMemory = tracks
+	sess.Mu.Unlock()
+	
+	msg := "**Native YouTube Search Output:** (Call `!p <number>` seamlessly to mount the track linearly natively!)\n"
+	for i, t := range tracks {
+		msg += fmt.Sprintf("`%2d.` %s\n", i+1, t.Title)
+		if i >= 19 {
+			break
+		}
+	}
+	s.ChannelMessageSend(m.ChannelID, msg)
 }
 
 func cmdSkip(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {

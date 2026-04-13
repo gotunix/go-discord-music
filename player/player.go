@@ -54,6 +54,7 @@ type Session struct {
 	Queue        []*youtube.Track
 	CurrentTrack *youtube.Track // Currently parsing track loop directly.
 	History      []*youtube.Track // Physical persistent memory list archiving execution streams natively.
+	SearchMemory []*youtube.Track // Temporarily statically evaluates queried track pipelines inherently securely!
 	IsPlaying    bool
 	TextChannel  string
 	Volume       int // Native integer [0, 500] explicitly mapping FFMPEG audio output percentages!
@@ -77,10 +78,11 @@ func GetSession(guildID string) *Session {
 		return sess
 	}
 	sess := &Session{
-		GuildID:  guildID,
-		Queue:    []*youtube.Track{},
-		History:  []*youtube.Track{},
-		Volume:   15,
+		GuildID:      guildID,
+		Queue:        []*youtube.Track{},
+		History:      []*youtube.Track{},
+		SearchMemory: []*youtube.Track{},
+		Volume:       15,
 		stopChan: make(chan bool, 1),
 		skipChan: make(chan bool, 1),
 	}
@@ -115,6 +117,7 @@ func (s *Session) Leave() {
 	s.IsPlaying = false
 	s.Queue = []*youtube.Track{}
 	s.History = []*youtube.Track{}
+	s.SearchMemory = []*youtube.Track{}
 	s.CurrentTrack = nil
 }
 
@@ -130,6 +133,7 @@ func (s *Session) ClearQueue() {
 	s.Mu.Lock()
 	s.Queue = []*youtube.Track{}
 	s.History = []*youtube.Track{}
+	s.SearchMemory = []*youtube.Track{}
 	s.Mu.Unlock()
 }
 
