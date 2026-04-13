@@ -32,7 +32,6 @@ package bot
 
 import (
 	"fmt"
-	"log"
 	"runtime/debug"
 	"strconv"
 	"strings"
