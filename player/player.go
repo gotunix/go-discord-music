@@ -48,8 +48,10 @@ type Session struct {
 	CurrentTrack *youtube.Track
 	IsPlaying    bool
 	TextChannel  string
+	Volume       int
 	
 	Mu           sync.Mutex
+	Stream       *dca.StreamingSession
 	stopChan     chan bool
 	skipChan     chan bool
 }
@@ -68,6 +70,7 @@ func GetSession(guildID string) *Session {
 	sess := &Session{
 		GuildID:  guildID,
 		Queue:    []*youtube.Track{},
+		Volume:   5,
 		stopChan: make(chan bool, 1),
 		skipChan: make(chan bool, 1),
 	}
@@ -131,6 +134,14 @@ func (s *Session) Stop() {
 	}
 }
 
+func (s *Session) SetPaused(pause bool) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	if s.Stream != nil {
+		s.Stream.SetPaused(pause)
+	}
+}
+
 func (s *Session) PlayQueue(sctx *discordgo.Session) {
 	if s.IsPlaying {
 		return
@@ -166,6 +177,7 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	options.RawOutput = true
 	options.Bitrate = 96
 	options.Application = "audio"
+	options.Volume = int((float64(s.Volume) / 100.0) * 256)
 
 	encodeSession, err := dca.EncodeFile(track.URL, options)
 	if err != nil {
@@ -174,8 +186,16 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	}
 	defer encodeSession.Cleanup()
 
+	// Discord officially ignores all incoming UDP packets natively unless Speaking is true.
+	s.VoiceClient.Speaking(true)
+	defer s.VoiceClient.Speaking(false)
+
 	done := make(chan error)
-	dca.NewStream(encodeSession, s.VoiceClient, done)
+	stream := dca.NewStream(encodeSession, s.VoiceClient, done)
+
+	s.Mu.Lock()
+	s.Stream = stream
+	s.Mu.Unlock()
 
 	if s.TextChannel != "" {
 		embed := &discordgo.MessageEmbed{

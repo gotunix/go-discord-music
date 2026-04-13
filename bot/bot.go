@@ -32,7 +32,9 @@ package bot
 
 import (
 	"fmt"
+	"log"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
@@ -61,6 +63,10 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		cmdPlay(s, m, args, sess)
 	case "skip", "s":
 		cmdSkip(s, m, sess)
+	case "pause":
+		cmdPause(s, m, sess)
+	case "resume":
+		cmdResume(s, m, sess)
 	case "stop":
 		cmdStop(s, m, sess)
 	case "queue", "q":
@@ -73,6 +79,8 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		cmdLoadQueue(s, m, args, sess)
 	case "savedplaylists":
 		cmdSavedPlaylists(s, m, sess)
+	case "volume", "vol", "v":
+		cmdVolume(s, m, args, sess)
 	case "join":
 		cmdJoin(s, m, sess)
 	case "leave":
@@ -300,10 +308,39 @@ func cmdHelp(s *discordgo.Session, m *discordgo.MessageCreate) {
 		Color: 0x3498db,
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: "📻 Playback", Value: "`!play <URL or Search>` - Extract audio\n`!skip` - Skip current track\n`!stop` - Stop execution completely", Inline: false},
-			{Name: "📝 Queue & State", Value: "`!queue` - Output active streams\n`!clear` - Wipe entire queue\n`!savequeue <name>` - Persist dynamically\n`!loadqueue <name>` - Mount natively\n`!savedplaylists` - Output stored tracks", Inline: false},
+			{Name: "📝 Queue & State", Value: "`!queue` - Output active streams\n`!clear` - Wipe entire queue\n`!volume <1-100>` - Alter Audio Loudness\n`!savequeue <name>` - Persist dynamically\n`!loadqueue <name>` - Mount natively\n`!savedplaylists` - Output stored tracks", Inline: false},
 			{Name: "⚙️ Core Setup", Value: "`!join` - Mount voice\n`!leave` - Unbind voice\n`!version` - Core execution metrics\n`!help` - Output this array", Inline: false},
 		},
 		Footer: &discordgo.MessageEmbedFooter{Text: "Golang Native Edition"},
 	}
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
+}
+
+func cmdVolume(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session) {
+	if len(args) < 2 {
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("🔊 Current volume is physically mapped to **%d%%**", sess.Volume))
+		return
+	}
+	
+	v, err := strconv.Atoi(args[1])
+	if err != nil || v < 1 || v > 500 {
+		s.ChannelMessageSend(m.ChannelID, "❌ Specify a valid magnitude natively (e.g. `!volume 5`).")
+		return
+	}
+	
+	sess.Mu.Lock()
+	sess.Volume = v
+	sess.Mu.Unlock()
+	
+	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("🔊 Volume permanently adjusted to **%d%%**. (Will actively reflect upon subsequent track slices).", v))
+}
+
+func cmdPause(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
+	sess.SetPaused(true)
+	s.ChannelMessageSend(m.ChannelID, "⏸ Audio execution correctly sliced into physical pause.")
+}
+
+func cmdResume(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
+	sess.SetPaused(false)
+	s.ChannelMessageSend(m.ChannelID, "▶ Audio pipeline natively unbound into execution.")
 }
