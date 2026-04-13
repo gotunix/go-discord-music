@@ -303,20 +303,12 @@ func cmdLoadQueue(s *discordgo.Session, m *discordgo.MessageCreate, args []strin
 	s.ChannelMessageSend(m.ChannelID, "⏳ Asynchronously proxying fresh CDN certificates organically...")
 	
 	go func() {
+		// Just directly map the legacy configurations functionally into the native payload queue!
+		// Memory streams actively extract exact stream data natively exactly when PlayQueue evaluates the track!
 		for _, legacyTrack := range q {
-			target := legacyTrack.Webpage
-			if target == "" {
-				target = legacyTrack.URL
-			}
-			fresh, _ := youtube.Extract(target)
-			if fresh != nil {
-				sess.AddQueue(fresh)
-			} else {
-				// Fallback dynamically
-				sess.AddQueue(legacyTrack)
-			}
+			sess.AddQueue(legacyTrack)
 		}
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Intercepted **%d** streams directly bridging internal loops.", len(q)))
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Intercepted **%d** streams natively bridging internal execution loops.", len(q)))
 		sess.PlayQueue(s)
 	}()
 }
