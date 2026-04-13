@@ -94,7 +94,8 @@ func Extract(url string) (*Track, error) {
 func ExtractPlaylist(url string) ([]*Track, error) {
 	log.Printf("Extracting underlying parsed Playlist natively: %s", url)
 	args := []string{
-		"-f", "bestaudio/best",
+		"--flat-playlist",
+		"--no-warnings",
 		"-J",
 		url,
 	}
