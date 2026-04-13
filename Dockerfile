@@ -7,6 +7,7 @@ COPY . .
 # We can safely run tidy using local module mappings 
 RUN apk add --no-cache git
 RUN go get github.com/jonas747/dca
+RUN go get github.com/bwmarrin/discordgo@master
 RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -o music-binary main.go
 

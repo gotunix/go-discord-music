@@ -77,6 +77,8 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		cmdJoin(s, m, sess)
 	case "leave":
 		cmdLeave(s, m, sess)
+	case "help", "h":
+		cmdHelp(s, m)
 	case "version":
 		cmdVersion(s, m)
 	}
@@ -289,4 +291,19 @@ func cmdSavedPlaylists(s *discordgo.Session, m *discordgo.MessageCreate, sess *p
 		msg += fmt.Sprintf("• `%s`\n", n)
 	}
 	s.ChannelMessageSend(m.ChannelID, msg)
+}
+
+func cmdHelp(s *discordgo.Session, m *discordgo.MessageCreate) {
+	embed := &discordgo.MessageEmbed{
+		Title: "🎵 Music Bot Commands",
+		Description: "A high-performance Golang audio architecture directly bridging Discord.",
+		Color: 0x3498db,
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: "📻 Playback", Value: "`!play <URL or Search>` - Extract audio\n`!skip` - Skip current track\n`!stop` - Stop execution completely", Inline: false},
+			{Name: "📝 Queue & State", Value: "`!queue` - Output active streams\n`!clear` - Wipe entire queue\n`!savequeue <name>` - Persist dynamically\n`!loadqueue <name>` - Mount natively\n`!savedplaylists` - Output stored tracks", Inline: false},
+			{Name: "⚙️ Core Setup", Value: "`!join` - Mount voice\n`!leave` - Unbind voice\n`!version` - Core execution metrics\n`!help` - Output this array", Inline: false},
+		},
+		Footer: &discordgo.MessageEmbedFooter{Text: "Golang Native Edition"},
+	}
+	s.ChannelMessageSendEmbed(m.ChannelID, embed)
 }
