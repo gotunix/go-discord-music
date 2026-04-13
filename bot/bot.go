@@ -62,6 +62,8 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		cmdPlay(s, m, args, sess)
 	case "skip", "s", "next":
 		cmdSkip(s, m, sess)
+	case "previous", "prev":
+		cmdPrevious(s, m, sess)
 	case "shuffle":
 		cmdShuffle(s, m, sess)
 	case "pause":
@@ -196,6 +198,14 @@ func cmdSkip(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Sess
 		s.ChannelMessageSend(m.ChannelID, "⏭️ Instructed execution stream dynamically to break frame playback.")
 	} else {
 		s.ChannelMessageSend(m.ChannelID, "❌ Memory block is not playing.")
+	}
+}
+
+func cmdPrevious(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
+	if sess.Previous() {
+		s.ChannelMessageSend(m.ChannelID, "⏪ Structurally reversed dynamically natively! Re-queueing prior payload sequence.")
+	} else {
+		s.ChannelMessageSend(m.ChannelID, "❌ No previous baseline execution tracks are stored natively in the persistent array.")
 	}
 }
 

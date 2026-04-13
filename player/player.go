@@ -53,6 +53,7 @@ type Session struct {
 	VoiceClient  *discordgo.VoiceConnection // Physical WebSocket mapping block to the Voice Channel natively.
 	Queue        []*youtube.Track
 	CurrentTrack *youtube.Track // Currently parsing track loop directly.
+	History      []*youtube.Track // Physical persistent memory list archiving execution streams natively.
 	IsPlaying    bool
 	TextChannel  string
 	Volume       int // Native integer [0, 500] explicitly mapping FFMPEG audio output percentages!
@@ -78,6 +79,7 @@ func GetSession(guildID string) *Session {
 	sess := &Session{
 		GuildID:  guildID,
 		Queue:    []*youtube.Track{},
+		History:  []*youtube.Track{},
 		Volume:   15,
 		stopChan: make(chan bool, 1),
 		skipChan: make(chan bool, 1),
@@ -112,6 +114,7 @@ func (s *Session) Leave() {
 	}
 	s.IsPlaying = false
 	s.Queue = []*youtube.Track{}
+	s.History = []*youtube.Track{}
 	s.CurrentTrack = nil
 }
 
@@ -126,6 +129,7 @@ func (s *Session) AddQueue(track *youtube.Track) {
 func (s *Session) ClearQueue() {
 	s.Mu.Lock()
 	s.Queue = []*youtube.Track{}
+	s.History = []*youtube.Track{}
 	s.Mu.Unlock()
 }
 
@@ -147,6 +151,35 @@ func (s *Session) Skip() bool {
 		return true
 	}
 	return false
+}
+
+// Previous strictly reverses the array explicitly mapping tracking streams structurally dynamically.
+func (s *Session) Previous() bool {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	
+	if len(s.History) == 0 {
+		return false
+	}
+	
+	// Map the immediate previous payload inherently securely
+	prev := s.History[len(s.History)-1]
+	s.History = s.History[:len(s.History)-1]
+	
+	// Reposition the active cleanly back over identically sequentially
+	if s.CurrentTrack != nil {
+		s.Queue = append([]*youtube.Track{s.CurrentTrack}, s.Queue...)
+	}
+	
+	// Physically prepend the reversed array immediately onto the stack
+	s.Queue = append([]*youtube.Track{prev}, s.Queue...)
+	s.CurrentTrack = nil 
+	
+	if s.IsPlaying {
+		s.skipChan <- true
+	}
+	
+	return true
 }
 
 // Stop cleanly cuts execution completely natively terminating the queue mappings seamlessly.
@@ -182,6 +215,12 @@ func (s *Session) PlayQueue(sctx *discordgo.Session) {
 				break
 			}
 			track := s.Queue[0]
+			
+			// Map out history arrays intrinsically across the sequence boundary!
+			if s.CurrentTrack != nil {
+				s.History = append(s.History, s.CurrentTrack)
+			}
+			
 			s.Queue = s.Queue[1:]
 			s.CurrentTrack = track
 			s.Mu.Unlock()
