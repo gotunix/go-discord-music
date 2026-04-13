@@ -78,7 +78,7 @@ func GetSession(guildID string) *Session {
 	sess := &Session{
 		GuildID:  guildID,
 		Queue:    []*youtube.Track{},
-		Volume:   100,
+		Volume:   15,
 		stopChan: make(chan bool, 1),
 		skipChan: make(chan bool, 1),
 	}
