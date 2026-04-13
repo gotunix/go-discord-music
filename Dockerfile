@@ -11,7 +11,7 @@ RUN go mod edit -replace github.com/bwmarrin/discordgo=github.com/yeongaori/disc
 RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -o music-binary main.go
 
-FROM alpine:3.19
+FROM alpine:latest
 
 WORKDIR /app
 COPY --from=builder /app/music-binary .
@@ -22,6 +22,10 @@ RUN apk add --no-cache tzdata ca-certificates ffmpeg python3 py3-pip su-exec
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install -U yt-dlp
+
+# Natively intercept the broken jonas747/dca -vol structural proxy logic completely safely
+COPY ffmpeg-wrapper.sh /usr/local/bin/ffmpeg
+RUN chmod +x /usr/local/bin/ffmpeg
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
