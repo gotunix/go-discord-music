@@ -138,7 +138,7 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 	s.ChannelMessageSend(m.ChannelID, "⏳ Locating manifest streams dynamically...")
 
 	var tracks []*youtube.Track
-	if strings.Contains(query, "playlist") {
+	if strings.Contains(query, "playlist") || strings.Contains(query, "list=") {
 		ch := make(chan *youtube.Track, 250)
 		doneChan := make(chan bool)
 
