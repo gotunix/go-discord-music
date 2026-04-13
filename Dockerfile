@@ -16,10 +16,14 @@ WORKDIR /app
 COPY --from=builder /app/music-binary .
 
 # Important: FFMPEG and Python3 (for yt-dlp) are strictly required globally mapping
-RUN apk add --no-cache tzdata ca-certificates ffmpeg python3 py3-pip
+RUN apk add --no-cache tzdata ca-certificates ffmpeg python3 py3-pip su-exec
 # Install yt-dlp natively bridging Python proxy locally
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install -U yt-dlp
 
-ENTRYPOINT ["./music-binary"]
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["./music-binary"]

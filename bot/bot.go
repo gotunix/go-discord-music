@@ -155,8 +155,8 @@ func cmdStop(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Sess
 }
 
 func cmdQueue(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
-	sess.mu.Lock()
-	defer sess.mu.Unlock()
+	sess.Mu.Lock()
+	defer sess.Mu.Unlock()
 	
 	if len(sess.Queue) == 0 && sess.CurrentTrack == nil {
 		s.ChannelMessageSend(m.ChannelID, "💭 Queue completely empty organically.")

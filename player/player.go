@@ -49,7 +49,7 @@ type Session struct {
 	IsPlaying    bool
 	TextChannel  string
 	
-	mu           sync.Mutex
+	Mu           sync.Mutex
 	stopChan     chan bool
 	skipChan     chan bool
 }
@@ -76,8 +76,8 @@ func GetSession(guildID string) *Session {
 }
 
 func (s *Session) Join(sctx *discordgo.Session, guildID, voiceChannelID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
 	
 	vc, err := sctx.ChannelVoiceJoin(guildID, voiceChannelID, false, true)
 	if err != nil {
@@ -88,8 +88,8 @@ func (s *Session) Join(sctx *discordgo.Session, guildID, voiceChannelID string) 
 }
 
 func (s *Session) Leave() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
 	
 	if s.IsPlaying {
 		s.stopChan <- true
@@ -105,15 +105,15 @@ func (s *Session) Leave() {
 }
 
 func (s *Session) AddQueue(track *youtube.Track) {
-	s.mu.Lock()
+	s.Mu.Lock()
 	s.Queue = append(s.Queue, track)
-	s.mu.Unlock()
+	s.Mu.Unlock()
 }
 
 func (s *Session) ClearQueue() {
-	s.mu.Lock()
+	s.Mu.Lock()
 	s.Queue = []*youtube.Track{}
-	s.mu.Unlock()
+	s.Mu.Unlock()
 }
 
 func (s *Session) Skip() bool {
@@ -139,17 +139,17 @@ func (s *Session) PlayQueue(sctx *discordgo.Session) {
 
 	go func() {
 		for {
-			s.mu.Lock()
+			s.Mu.Lock()
 			if len(s.Queue) == 0 {
 				s.IsPlaying = false
 				s.CurrentTrack = nil
-				s.mu.Unlock()
+				s.Mu.Unlock()
 				break
 			}
 			track := s.Queue[0]
 			s.Queue = s.Queue[1:]
 			s.CurrentTrack = track
-			s.mu.Unlock()
+			s.Mu.Unlock()
 
 			s.playTrack(sctx, track)
 		}

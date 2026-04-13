@@ -7,3 +7,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
