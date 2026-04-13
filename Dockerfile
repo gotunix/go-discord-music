@@ -11,7 +11,7 @@ RUN go mod edit -replace github.com/bwmarrin/discordgo=github.com/yeongaori/disc
 RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -o music-binary main.go
 
-FROM alpine:latest
+FROM alpine:3.19
 
 WORKDIR /app
 COPY --from=builder /app/music-binary .
