@@ -39,12 +39,12 @@ import (
 )
 
 type Track struct {
-	Title     string
-	URL       string 
-	Webpage   string 
-	Duration  float64
-	Thumbnail string
-	Uploader  string
+	Title     string  `json:"title"`
+	URL       string  `json:"url"`
+	Webpage   string  `json:"webpage_url"`
+	Duration  float64 `json:"duration"`
+	Thumbnail string  `json:"thumbnail"`
+	Uploader  string  `json:"uploader"`
 }
 
 func (t *Track) Display() string {

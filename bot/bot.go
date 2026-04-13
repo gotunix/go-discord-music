@@ -67,6 +67,12 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		cmdQueue(s, m, sess)
 	case "clear":
 		cmdClear(s, m, sess)
+	case "savequeue":
+		cmdSaveQueue(s, m, args, sess)
+	case "loadqueue":
+		cmdLoadQueue(s, m, args, sess)
+	case "savedplaylists":
+		cmdSavedPlaylists(s, m, sess)
 	case "join":
 		cmdJoin(s, m, sess)
 	case "leave":
@@ -197,4 +203,90 @@ func cmdVersion(s *discordgo.Session, m *discordgo.MessageCreate) {
 		Color: 0x9B59B6,
 	}
 	s.ChannelMessageSendEmbed(m.ChannelID, embed)
+}
+
+func cmdSaveQueue(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session) {
+	if len(args) < 2 {
+		s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!savequeue <name>`")
+		return
+	}
+	
+	name := strings.Join(args[1:], " ")
+	
+	sess.Mu.Lock()
+	q := make([]*youtube.Track, 0, len(sess.Queue))
+	for _, t := range sess.Queue {
+		q = append(q, t)
+	}
+	if sess.CurrentTrack != nil {
+		q = append([]*youtube.Track{sess.CurrentTrack}, q...)
+	}
+	sess.Mu.Unlock()
+	
+	if len(q) == 0 {
+		s.ChannelMessageSend(m.ChannelID, "❌ Queue is organically empty.")
+		return
+	}
+	
+	player.SaveQueue(m.GuildID, name, q)
+	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("💾 Active playback map persisted cleanly to `%s`.", name))
+}
+
+func cmdLoadQueue(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session) {
+	if len(args) < 2 {
+		s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!loadqueue <name>`")
+		return
+	}
+	
+	name := strings.Join(args[1:], " ")
+	q := player.LoadQueue(m.GuildID, name)
+	
+	if len(q) == 0 {
+		s.ChannelMessageSend(m.ChannelID, "❌ Could not retrieve extraction schema locally.")
+		return
+	}
+
+	state, err := s.State.VoiceState(m.GuildID, m.Author.ID)
+	if err != nil && sess.VoiceClient == nil {
+		s.ChannelMessageSend(m.ChannelID, "❌ Drop into a voice comm channel initially.")
+		return
+	}
+
+	if sess.VoiceClient == nil {
+		sess.Join(s, m.GuildID, state.ChannelID)
+	}
+
+	s.ChannelMessageSend(m.ChannelID, "⏳ Asynchronously proxying fresh CDN certificates organically...")
+	
+	go func() {
+		for _, legacyTrack := range q {
+			target := legacyTrack.Webpage
+			if target == "" {
+				target = legacyTrack.URL
+			}
+			fresh, _ := youtube.Extract(target)
+			if fresh != nil {
+				sess.AddQueue(fresh)
+			} else {
+				// Fallback dynamically
+				sess.AddQueue(legacyTrack)
+			}
+		}
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Intercepted **%d** streams directly bridging internal loops.", len(q)))
+		sess.PlayQueue(s)
+	}()
+}
+
+func cmdSavedPlaylists(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
+	names := player.GetPlaylists(m.GuildID)
+	if len(names) == 0 {
+		s.ChannelMessageSend(m.ChannelID, "💭 No customized streams organically accessible physically.")
+		return
+	}
+	
+	msg := "📁 **Persisted Stream Arrays:**\n"
+	for _, n := range names {
+		msg += fmt.Sprintf("• `%s`\n", n)
+	}
+	s.ChannelMessageSend(m.ChannelID, msg)
 }
