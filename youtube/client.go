@@ -31,6 +31,7 @@
 package youtube
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -91,20 +92,52 @@ func Extract(url string) (*Track, error) {
 	return nil, err
 }
 
-func ExtractPlaylist(url string) ([]*Track, error) {
-	log.Printf("Extracting underlying parsed Playlist natively: %s", url)
+func ExtractPlaylistAsync(url string, ch chan<- *Track, doneChan chan<- bool) {
+	log.Printf("Extracting underlying parsed Playlist natively asynchronously: %s", url)
 	args := []string{
+		"--dump-json",
 		"--flat-playlist",
 		"--no-warnings",
-		"-J",
 		url,
 	}
 	cmd := exec.Command("yt-dlp", args...)
-	out, err := cmd.Output()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, fmt.Errorf("yt-dlp full playlist extraction failed structurally map : %w", err)
+		log.Printf("yt-dlp async pipe creation failed natively: %v", err)
+		doneChan <- true
+		return
 	}
-	return parseJSONLines(out)
+
+	if err := cmd.Start(); err != nil {
+		log.Printf("yt-dlp async wrapper invocation completely severed: %v", err)
+		doneChan <- true
+		return
+	}
+
+	// Spin background daemon immediately explicitly to process string streams exactly dynamically!
+	go func() {
+		defer func() {
+			cmd.Wait()
+			doneChan <- true
+		}()
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			
+			var raw map[string]interface{}
+			if err := json.Unmarshal([]byte(line), &raw); err != nil {
+				continue
+			}
+			
+			t := extractSingleTrack(raw)
+			if t != nil && t.URL != "" {
+				ch <- t
+			}
+		}
+	}()
 }
 
 func parseJSONLines(data []byte) ([]*Track, error) {

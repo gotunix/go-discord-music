@@ -134,7 +134,41 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 
 	var tracks []*youtube.Track
 	if strings.Contains(query, "playlist") {
-		tracks, err = youtube.ExtractPlaylist(query)
+		ch := make(chan *youtube.Track, 250)
+		doneChan := make(chan bool)
+		var err error
+
+		go youtube.ExtractPlaylistAsync(query, ch, doneChan)
+
+		s.ChannelMessageSend(m.ChannelID, "⏳ Intercepting playlist structures asynchronously...")
+
+		isFirst := true
+		count := 0
+
+		// Spin independent background proxy directly into memory looping
+		go func() {
+			for {
+				select {
+				case t := <-ch:
+					sess.AddQueue(t)
+					count++
+					
+					// Instantaneously branch off natively!
+					if isFirst {
+						isFirst = false
+						s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("▶️ Actively locked physical stream essentially instantly: **%s**! Parsing remaining dynamically...", t.Title))
+						// Begin executing while we natively scrape the others gracefully.
+						sess.PlayQueue(s)
+					}
+				case <-doneChan:
+					s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Playlist structurally fully mapped! Queued **%d** physical streams natively.", count))
+					return
+				}
+			}
+		}()
+		
+		// Immediately drop out linearly!
+		return
 	} else if strings.HasPrefix(query, "http") {
 		var track *youtube.Track
 		track, err = youtube.Extract(query)
