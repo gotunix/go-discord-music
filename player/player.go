@@ -33,7 +33,9 @@ package player
 import (
 	"fmt"
 	"log"
+	"os/exec"
 	"sync"
+	"io"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/jonas747/dca"
@@ -82,7 +84,7 @@ func (s *Session) Join(sctx *discordgo.Session, guildID, voiceChannelID string) 
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	
-	vc, err := sctx.ChannelVoiceJoin(guildID, voiceChannelID, false, true)
+	vc, err := sctx.ChannelVoiceJoin(guildID, voiceChannelID, false, false)
 	if err != nil {
 		return err
 	}
@@ -179,7 +181,29 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	options.Application = "audio"
 	options.Volume = int((float64(s.Volume) / 100.0) * 256)
 
-	encodeSession, err := dca.EncodeFile(track.URL, options)
+	target := track.Webpage
+	if target == "" {
+		target = track.URL
+	}
+
+	ytdlp := exec.Command("yt-dlp", "-f", "bestaudio/best", "-q", "-o", "-", target)
+	stdout, err := ytdlp.StdoutPipe()
+	if err != nil {
+		log.Printf("Failed configuring stdout proxy: %v", err)
+		return
+	}
+
+	if err := ytdlp.Start(); err != nil {
+		log.Printf("Failed invoking yt-dlp physical wrapper: %v", err)
+		return
+	}
+	defer func() {
+		if ytdlp.Process != nil {
+			ytdlp.Process.Kill()
+		}
+	}()
+
+	encodeSession, err := dca.EncodeMem(stdout, options)
 	if err != nil {
 		log.Printf("Failed encoding dynamically OPUS map : %v", err)
 		return
@@ -213,7 +237,12 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	}
 
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			log.Printf("FFMPEG pipeline exited natively with error: %v", err)
+		} else {
+			log.Printf("Track actively completed stream accurately.")
+		}
 	case <-s.skipChan:
 		log.Println("Skipping track dynamically")
 	case <-s.stopChan:
