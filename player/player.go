@@ -149,33 +149,34 @@ func (s *Session) ShuffleQueue() {
 }
 
 // Move structurally slices precise sequence payloads natively translating execution tracks sequentially linearly!
-func (s *Session) Move(from, to int) bool {
+func (s *Session) Move(from, to int) (*youtube.Track, bool) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	
 	if from < 0 || from >= len(s.Queue) || to < 0 || to >= len(s.Queue) {
-		return false
+		return nil, false
 	}
 	
 	track := s.Queue[from]
 	s.Queue = append(s.Queue[:from], s.Queue[from+1:]...)
 	s.Queue = append(s.Queue[:to], append([]*youtube.Track{track}, s.Queue[to:]...)...)
 	
-	return true
+	return track, true
 }
 
 // Remove cleanly directly effectively rips explicitly mapped elements statically natively out of sequence boundaries structurally.
-func (s *Session) Remove(idx int) bool {
+func (s *Session) Remove(idx int) (*youtube.Track, bool) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	
 	if idx < 0 || idx >= len(s.Queue) {
-		return false
+		return nil, false
 	}
 	
+	track := s.Queue[idx]
 	s.Queue = append(s.Queue[:idx], s.Queue[idx+1:]...)
 	
-	return true
+	return track, true
 }
 
 // Skip seamlessly writes into the underlying channels mathematically slicing off the active DCA stream securely.
