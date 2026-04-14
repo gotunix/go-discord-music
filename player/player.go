@@ -164,6 +164,20 @@ func (s *Session) Move(from, to int) bool {
 	return true
 }
 
+// Remove cleanly directly effectively rips explicitly mapped elements statically natively out of sequence boundaries structurally.
+func (s *Session) Remove(idx int) bool {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	
+	if idx < 0 || idx >= len(s.Queue) {
+		return false
+	}
+	
+	s.Queue = append(s.Queue[:idx], s.Queue[idx+1:]...)
+	
+	return true
+}
+
 // Skip seamlessly writes into the underlying channels mathematically slicing off the active DCA stream securely.
 func (s *Session) Skip() bool {
 	if s.IsPlaying {
@@ -228,7 +242,7 @@ func (s *Session) PlayQueue(sctx *discordgo.Session) {
 	go func() {
 		for {
 			s.Mu.Lock()
-			if len(s.Queue) == 0 {
+			if len(s.Queue) == 0 || !s.IsPlaying {
 				s.IsPlaying = false
 				s.CurrentTrack = nil
 				s.Mu.Unlock()
@@ -252,7 +266,14 @@ func (s *Session) PlayQueue(sctx *discordgo.Session) {
 
 func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	if s.VoiceClient == nil || !s.VoiceClient.Ready {
-		log.Println("Voice not ready")
+		log.Println("Voice strictly essentially disconnected - Gracefully structurally severing pipeline array!")
+		
+		s.Mu.Lock()
+		s.IsPlaying = false
+		s.CurrentTrack = nil
+		// Requeue precisely securely onto identical bounds explicitly
+		s.Queue = append([]*youtube.Track{track}, s.Queue...)
+		s.Mu.Unlock()
 		return
 	}
 
