@@ -1,8 +1,9 @@
 FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
-COPY go.mod ./
-COPY . .
+# Go source files now live under src/ for clean project structure
+COPY src/go.mod ./
+COPY src/ .
 
 # We can safely run tidy using local module mappings 
 RUN apk add --no-cache git
