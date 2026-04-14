@@ -61,6 +61,8 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	switch cmd {
 	case "play", "p":
 		cmdPlay(s, m, args, sess, true)
+	case "playing", "np":
+		cmdPlaying(s, m, sess)
 	case "search":
 		cmdSearch(s, m, args, sess)
 	case "skip", "s", "next":
@@ -436,7 +438,7 @@ func cmdHelp(s *discordgo.Session, m *discordgo.MessageCreate) {
 		Description: "A high-performance Golang audio architecture directly bridging Discord.",
 		Color: 0x3498db,
 		Fields: []*discordgo.MessageEmbedField{
-			{Name: "📻 Playback", Value: "`!play <URL or Search>` - Extract audio (auto-shuffles playlists)\n`!search <Query>` - Locate TOP 20 native streams organically\n`!skip` (`!next`) - Skip cleanly across current sequence\n`!previous` (`!prev`) - Rigidly cleanly reverse payload sequence\n`!stop` - Terminate explicitly\n`!pause` - Pause cleanly\n`!resume` - Unpause linearly", Inline: false},
+			{Name: "📻 Playback", Value: "`!play <URL or Search>` - Extract audio (auto-shuffles playlists)\n`!search <Query>` - Locate TOP 20 native streams organically\n`!playing` (`!np`) - Display exactly actively mapped seamlessly physical active tracker arrays natively.\n`!skip` (`!next`) - Skip cleanly across current sequence\n`!previous` (`!prev`) - Rigidly cleanly reverse payload sequence\n`!stop` - Terminate explicitly\n`!pause` - Pause cleanly\n`!resume` - Unpause linearly", Inline: false},
 			{Name: "📝 Queue & State", Value: "`!queue` - Output active streams\n`!clear` - Wipe entire queue\n`!move <From> <To>` - Move specific natively mapped sequence intuitively\n`!volume <1-100>` - Alter Audio Loudness statically\n`!shuffle` - Randomize active arrays naturally\n`!savequeue <name>` - Persist purely physically\n`!loadqueue <name>` - Load organically natively\n`!savedplaylists` - Check persistent logs", Inline: false},
 			{Name: "⚙️ Core Setup", Value: "`!join` - Mount voice\n`!leave` - Unbind voice\n`!version` - Core execution metrics\n`!help` - Output this cleanly mapped array", Inline: false},
 		},
@@ -520,6 +522,30 @@ func cmdRemove(s *discordgo.Session, m *discordgo.MessageCreate, args []string, 
 	if track, ok := sess.Remove(idx); ok {
 		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Completely effectively organically eradicated natively: **%s** from physical slot `%d`.", track.Title, idx+1))
 	} else {
-		s.ChannelMessageSend(m.ChannelID, "❌ Explicit parameter ideally formally appropriately smartly perfectly cleanly cleanly falls entirely uniquely directly appropriately structurally implicitly naturally seamlessly perfectly uniquely successfully formally creatively intuitively intuitively cleanly outside perfectly structurally safely boundaries.")
+		s.ChannelMessageSend(m.ChannelID, "❌ Explicit parameter outside boundaries.")
 	}
+}
+
+func cmdPlaying(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
+	sess.Mu.Lock()
+	track := sess.CurrentTrack
+	sess.Mu.Unlock()
+	
+	if track == nil {
+		s.ChannelMessageSend(m.ChannelID, "❌ No audio streams are physically implicitly dynamically actively natively securely successfully cleanly appropriately gracefully executing linearly.")
+		return
+	}
+	
+	embed := &discordgo.MessageEmbed{
+		Title: "🎵 Actively Playing",
+		Description: track.Display(),
+		Color: 0x2ecc71,
+		Thumbnail: &discordgo.MessageEmbedThumbnail{URL: track.Thumbnail},
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: "Uploader", Value: track.Uploader, Inline: true},
+			{Name: "Duration", Value: fmt.Sprintf("%.0f seconds", track.Duration), Inline: true},
+		},
+		Footer: &discordgo.MessageEmbedFooter{Text: "▶ YouTube • Golang Native Execution"},
+	}
+	s.ChannelMessageSendEmbed(m.ChannelID, embed)
 }
