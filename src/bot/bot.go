@@ -302,7 +302,7 @@ func cmdQueue(s *discordgo.Session, m *discordgo.MessageCreate, args []string, s
 	currentMsg += fmt.Sprintf("📝 **Queue** (%d frames)\n", len(sess.Queue))
 	
 	for i, t := range sess.Queue {
-		// Native slice bound if explicitly missing 'all' sequentially organically mathematically mathematically gracefully implicitly naturally appropriately intuitively functionally cleanly efficiently uniquely intuitively practically appropriately
+		// Limit to first 15 items unless "all" is specified.
 		if !showAll && i >= 15 {
 			currentMsg += fmt.Sprintf("   ... and %d more items. (Use `!queue all` to explicitly display universally natively)\n", len(sess.Queue)-15)
 			break
@@ -455,7 +455,7 @@ func cmdVolume(s *discordgo.Session, m *discordgo.MessageCreate, args []string, 
 	
 	v, err := strconv.Atoi(args[1])
 	if err != nil || v < 1 || v > 500 {
-		s.ChannelMessageSend(m.ChannelID, "❌ Specify a valid magnitude natively (e.g. `!volume 5`).")
+		s.ChannelMessageSend(m.ChannelID, "❌ Volume must be between 1 and 500 (e.g. `!volume 50`).")
 		return
 	}
 	

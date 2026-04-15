@@ -44,6 +44,10 @@ import (
 func main() {
 	config.Load()
 
+	// Remove any leftover cache files from a previous run.
+	// They're temporary audio downloads that should never persist between restarts.
+	os.RemoveAll("cache")
+
 	dg, err := discordgo.New("Bot " + config.DiscordBotToken)
 	if err != nil {
 		log.Fatalf("Authentication bindings internally rejected metrics: %v", err)

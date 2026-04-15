@@ -31,19 +31,21 @@
 package player
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"math/rand"
-	"os/exec"
-	"sync"
 	"os"
-	"time"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/jonas747/dca"
-	
+
 	"go-discord-music/youtube"
 )
 
@@ -234,11 +236,24 @@ func (s *Session) SetPaused(pause bool) {
 	}
 }
 
+// sendError sends an error message to the Discord text channel and logs it.
+func (s *Session) sendError(sctx *discordgo.Session, msg string) {
+	log.Println("[player] error:", msg)
+	if sctx != nil && s.TextChannel != "" {
+		sctx.ChannelMessageSend(s.TextChannel, "⚠️ "+msg)
+	}
+}
+
 func (s *Session) PlayQueue(sctx *discordgo.Session) {
+	// Guard with mutex to prevent a race between two concurrent callers
+	// (e.g. playlist streamer + a !play command arriving simultaneously).
+	s.Mu.Lock()
 	if s.IsPlaying {
+		s.Mu.Unlock()
 		return
 	}
 	s.IsPlaying = true
+	s.Mu.Unlock()
 
 	go func() {
 		for {
@@ -250,12 +265,9 @@ func (s *Session) PlayQueue(sctx *discordgo.Session) {
 				break
 			}
 			track := s.Queue[0]
-			
-			// Map out history arrays intrinsically across the sequence boundary!
 			if s.CurrentTrack != nil {
 				s.History = append(s.History, s.CurrentTrack)
 			}
-			
 			s.Queue = s.Queue[1:]
 			s.CurrentTrack = track
 			s.Mu.Unlock()
@@ -267,13 +279,11 @@ func (s *Session) PlayQueue(sctx *discordgo.Session) {
 
 func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	if s.VoiceClient == nil || !s.VoiceClient.Ready {
-		log.Println("Voice strictly essentially disconnected - Gracefully structurally severing pipeline array!")
-		
+		s.sendError(sctx, fmt.Sprintf("Voice disconnected before playing **%s** — stopping playback.", track.Title))
 		s.Mu.Lock()
 		s.IsPlaying = false
 		s.CurrentTrack = nil
-		// Requeue precisely securely onto identical bounds explicitly
-		s.Queue = append([]*youtube.Track{track}, s.Queue...)
+		s.Queue = []*youtube.Track{} // clear queue — voice is gone, nothing to play into
 		s.Mu.Unlock()
 		return
 	}
@@ -282,9 +292,8 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	options.RawOutput = true
 	options.Bitrate = 96
 	options.Application = "audio"
-
-	// Native fix: The dca library natively passes -vol which is entirely deprecated in FFMPEG 8.0+.
-	// We force the structural map to skip `-vol` by mapping 256 organically, and seamlessly inject the modern AudioFilter syntax instead!
+	// Set volume=256 so dca passes -vol 256, which our ffmpeg-wrapper strips (it's deprecated
+	// in FFmpeg 6+). We apply the actual volume through the AudioFilter instead.
 	options.Volume = 256
 	options.AudioFilter = fmt.Sprintf("volume=%f", float64(s.Volume)/100.0)
 
@@ -293,42 +302,46 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 		target = track.URL
 	}
 
-	// Native fix: Youtube blocks FFMPEG standard pipes randomly without robust reconnect headers.
-	// Bypassing directly by cleanly archiving to a local cache volume just like the python structure natively did!
-	os.MkdirAll("cache", os.ModePerm)
-	cacheBase := fmt.Sprintf("cache/track_%d", time.Now().UnixNano())
-
-	ytdlp := exec.Command("yt-dlp", "-f", "bestaudio/best", "-q", "-o", cacheBase+".%(ext)s", target)
-	if err := ytdlp.Run(); err != nil {
-		log.Printf("yt-dlp explicitly failed downloading structural payload to cache: %v", err)
+	// Download to a local cache file first. Direct piping is unreliable because
+	// YouTube frequently blocks ffmpeg's user-agent on streaming URLs.
+	if err := os.MkdirAll("cache", os.ModePerm); err != nil {
+		s.sendError(sctx, fmt.Sprintf("Cannot create cache directory: %v", err))
 		return
 	}
-	
+	cacheBase := fmt.Sprintf("cache/track_%d", time.Now().UnixNano())
+
+	var ytdlpStderr bytes.Buffer
+	ytdlp := exec.Command("yt-dlp", "-f", "bestaudio/best", "-q", "-o", cacheBase+".%(ext)s", target)
+	ytdlp.Stderr = &ytdlpStderr
+	if err := ytdlp.Run(); err != nil {
+		// Extract the most useful line from yt-dlp's stderr output.
+		reason := extractYtdlpReason(ytdlpStderr.String())
+		s.sendError(sctx, fmt.Sprintf("Cannot download **%s**: %s", track.Title, reason))
+		return
+	}
+
 	matches, _ := filepath.Glob(cacheBase + ".*")
 	if len(matches) == 0 {
-		log.Printf("Failed explicitly mapping yt-dlp formatted extension map entirely!")
+		s.sendError(sctx, fmt.Sprintf("yt-dlp produced no output file for **%s**.", track.Title))
 		return
 	}
 	cacheFile := matches[0]
-
-	// Clean up local footprint upon completion automatically!
 	defer os.Remove(cacheFile)
 
-	// Explicitly completely muzzle legacy DCA telemetry structural logging completely!
 	dca.Logger = log.New(io.Discard, "", 0)
 
 	encodeSession, err := dca.EncodeFile(cacheFile, options)
 	if err != nil {
-		log.Printf("Failed encoding dynamically OPUS map : %v", err)
+		s.sendError(sctx, fmt.Sprintf("Failed to encode **%s**: %v", track.Title, err))
 		return
 	}
 	defer encodeSession.Cleanup()
 
-	// Discord officially ignores all incoming UDP packets natively unless Speaking is true.
 	s.VoiceClient.Speaking(true)
 	defer s.VoiceClient.Speaking(false)
 
-	// DAVE (E2EE) mathematically requires a minor stabilization window cleanly intercepting initial keys!
+	// Brief sleep to let Discord's E2EE (DAVE) key exchange complete before
+	// sending the first Opus frame, otherwise the first second is silent.
 	time.Sleep(1 * time.Second)
 
 	done := make(chan error)
@@ -340,30 +353,56 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 
 	if s.TextChannel != "" {
 		embed := &discordgo.MessageEmbed{
-			Title: "🎵 Now Playing",
+			Title:       "🎵 Now Playing",
 			Description: track.Display(),
-			Color: 0xFF0000,
-			Thumbnail: &discordgo.MessageEmbedThumbnail{URL: track.Thumbnail},
+			Color:       0xFF0000,
+			Thumbnail:   &discordgo.MessageEmbedThumbnail{URL: track.Thumbnail},
 			Fields: []*discordgo.MessageEmbedField{
 				{Name: "Uploader", Value: track.Uploader, Inline: true},
 				{Name: "Duration", Value: fmt.Sprintf("%.0f seconds", track.Duration), Inline: true},
 			},
-			Footer: &discordgo.MessageEmbedFooter{Text: "▶ YouTube • Golang Native Edition"},
+			Footer: &discordgo.MessageEmbedFooter{Text: "▶ YouTube"},
 		}
 		sctx.ChannelMessageSendEmbed(s.TextChannel, embed)
 	}
 
 	select {
 	case err := <-done:
-		if err != nil {
-			log.Printf("FFMPEG pipeline exited natively with error: %v", err)
-			log.Printf("FFMPEG STDE: %s", encodeSession.FFMPEGMessages())
+		if err != nil && err != io.EOF {
+			msg := fmt.Sprintf("Playback error for **%s**: %v", track.Title, err)
+			ffmpegMsg := encodeSession.FFMPEGMessages()
+			if ffmpegMsg != "" {
+				msg += fmt.Sprintf("\nFFmpeg: `%s`", strings.TrimSpace(ffmpegMsg))
+			}
+			s.sendError(sctx, msg)
 		} else {
-			log.Printf("Track actively completed stream accurately.")
+			log.Printf("[player] finished: %s", track.Title)
 		}
 	case <-s.skipChan:
-		log.Println("Skipping track dynamically")
+		log.Printf("[player] skipped: %s", track.Title)
 	case <-s.stopChan:
-		log.Println("Stopping track dynamically")
+		log.Printf("[player] stopped: %s", track.Title)
 	}
+}
+
+// extractYtdlpReason picks the most human-readable line from yt-dlp stderr.
+func extractYtdlpReason(stderr string) string {
+	if stderr == "" {
+		return "unknown error (no output from yt-dlp)"
+	}
+	// yt-dlp error lines start with "ERROR:" — grab the first one.
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "ERROR:") {
+			return strings.TrimPrefix(line, "ERROR: ")
+		}
+	}
+	// Fall back to the last non-empty line.
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if l := strings.TrimSpace(lines[i]); l != "" {
+			return l
+		}
+	}
+	return "unknown error"
 }
