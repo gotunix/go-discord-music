@@ -49,22 +49,24 @@ import (
 	"go-discord-music/youtube"
 )
 
-// Session represents an entirely localized physical boundary cleanly tracking a single Discord server's execution state explicitly.
+// Session holds the entire playback state for a single Discord guild (server).
+// One Session exists per guild and is created on first use by GetSession.
 type Session struct {
-	GuildID      string
-	VoiceClient  *discordgo.VoiceConnection // Physical WebSocket mapping block to the Voice Channel natively.
-	Queue        []*youtube.Track
-	CurrentTrack *youtube.Track // Currently parsing track loop directly.
-	History      []*youtube.Track // Physical persistent memory list archiving execution streams natively.
-	SearchMemory []*youtube.Track // Temporarily statically evaluates queried track pipelines inherently securely!
-	IsPlaying    bool
-	TextChannel  string
-	Volume       int // Native integer [0, 500] explicitly mapping FFMPEG audio output percentages!
-	
-	Mu           sync.Mutex
-	Stream       *dca.StreamingSession
-	stopChan     chan bool
-	skipChan     chan bool
+	GuildID        string
+	VoiceClient    *discordgo.VoiceConnection // Active WebSocket connection to a voice channel.
+	VoiceChannelID string                     // ID of the channel we're connected to; used for auto-reconnect.
+	Queue          []*youtube.Track
+	CurrentTrack   *youtube.Track
+	History        []*youtube.Track  // Tracks that have already played; used by !previous.
+	SearchMemory   []*youtube.Track  // Holds the last !search results so the user can pick with !p <number>.
+	IsPlaying      bool
+	TextChannel    string
+	Volume         int // Volume percentage in the range [1, 500]; applied via FFmpeg AudioFilter.
+
+	Mu       sync.Mutex
+	Stream   *dca.StreamingSession
+	stopChan chan bool
+	skipChan chan bool
 }
 
 var (
@@ -92,15 +94,45 @@ func GetSession(guildID string) *Session {
 	return sess
 }
 
+// Join connects the bot to a Discord voice channel and stores the channel ID
+// so the session can auto-reconnect if the voice WebSocket drops between tracks.
 func (s *Session) Join(sctx *discordgo.Session, guildID, voiceChannelID string) error {
-	s.Mu.Lock()
-	defer s.Mu.Unlock()
-	
+	// ChannelVoiceJoin is a blocking call; do not hold Mu across it.
 	vc, err := sctx.ChannelVoiceJoin(guildID, voiceChannelID, false, false)
 	if err != nil {
 		return err
 	}
+	s.Mu.Lock()
 	s.VoiceClient = vc
+	s.VoiceChannelID = voiceChannelID
+	s.Mu.Unlock()
+	return nil
+}
+
+// reconnect attempts to re-establish the voice WebSocket connection to the channel
+// the bot was last joined to. Called automatically when VoiceClient.Ready is false
+// at the start of a track (typically after a Discord voice server migration).
+//
+// Returns an error if VoiceChannelID is not set or ChannelVoiceJoin fails.
+func (s *Session) reconnect(sctx *discordgo.Session) error {
+	s.Mu.Lock()
+	channelID := s.VoiceChannelID
+	guildID := s.GuildID
+	s.Mu.Unlock()
+
+	if channelID == "" {
+		return fmt.Errorf("no voice channel recorded for this session")
+	}
+
+	log.Printf("[player] voice not ready — reconnecting to channel %s in guild %s", channelID, guildID)
+	vc, err := sctx.ChannelVoiceJoin(guildID, channelID, false, false)
+	if err != nil {
+		return fmt.Errorf("ChannelVoiceJoin failed: %w", err)
+	}
+
+	s.Mu.Lock()
+	s.VoiceClient = vc
+	s.Mu.Unlock()
 	return nil
 }
 
@@ -278,13 +310,48 @@ func (s *Session) PlayQueue(sctx *discordgo.Session) {
 }
 
 func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
+	// Voice WebSocket can drop between tracks due to Discord server migrations.
+	// Attempt an automatic reconnect before downloading anything — it's cheap
+	// compared to aborting the queue and requiring the user to !join again.
 	if s.VoiceClient == nil || !s.VoiceClient.Ready {
-		s.sendError(sctx, fmt.Sprintf("Voice disconnected before playing **%s** — stopping playback.", track.Title))
+		if sctx != nil && s.TextChannel != "" {
+			sctx.ChannelMessageSend(s.TextChannel, "🔄 Voice disconnected — attempting reconnect...")
+		}
+		if err := s.reconnect(sctx); err != nil {
+			s.sendError(sctx, fmt.Sprintf("Could not reconnect to voice (%v) — stopping playback.", err))
+			s.Mu.Lock()
+			s.IsPlaying = false
+			s.CurrentTrack = nil
+			s.Queue = []*youtube.Track{}
+			s.Mu.Unlock()
+			return
+		}
+
+		// Give the voice WebSocket a moment to complete the handshake
+		// before we check Ready and attempt to send audio.
+		time.Sleep(2 * time.Second)
+
+		if !s.VoiceClient.Ready {
+			s.sendError(sctx, "Reconnected but voice is still not ready — stopping playback.")
+			s.Mu.Lock()
+			s.IsPlaying = false
+			s.CurrentTrack = nil
+			s.Queue = []*youtube.Track{}
+			s.Mu.Unlock()
+			return
+		}
+
+		// Reconnect succeeded — put this track back at the front of the queue
+		// and return. PlayQueue's loop will dequeue it and call playTrack again
+		// with a live voice connection.
 		s.Mu.Lock()
-		s.IsPlaying = false
+		s.Queue = append([]*youtube.Track{track}, s.Queue...)
 		s.CurrentTrack = nil
-		s.Queue = []*youtube.Track{} // clear queue — voice is gone, nothing to play into
 		s.Mu.Unlock()
+		log.Printf("[player] reconnected — retrying: %s", track.Title)
+		if sctx != nil && s.TextChannel != "" {
+			sctx.ChannelMessageSend(s.TextChannel, fmt.Sprintf("✅ Reconnected — retrying **%s**.", track.Title))
+		}
 		return
 	}
 
