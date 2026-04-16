@@ -33,13 +33,18 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
 
 var (
-	DiscordBotToken string
-	CommandPrefix   string
+	DiscordBotToken  string
+	CommandPrefix    string
+	// MaxTrackDuration is the maximum allowed track length in seconds.
+	// Tracks longer than this are silently skipped when added to the queue.
+	// Set MAX_TRACK_DURATION=0 in the environment to disable the limit.
+	MaxTrackDuration float64
 )
 
 func Load() {
@@ -48,6 +53,15 @@ func Load() {
 	CommandPrefix = os.Getenv("COMMAND_PREFIX")
 	if CommandPrefix == "" {
 		CommandPrefix = "!"
+	}
+
+	// Default: 10 minutes. Override with MAX_TRACK_DURATION (seconds).
+	// Set to 0 to disable the limit entirely.
+	MaxTrackDuration = 600
+	if s := os.Getenv("MAX_TRACK_DURATION"); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			MaxTrackDuration = v
+		}
 	}
 
 	if DiscordBotToken == "" {

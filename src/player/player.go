@@ -63,10 +63,11 @@ type Session struct {
 	TextChannel    string
 	Volume         int // Volume percentage in the range [1, 500]; applied via FFmpeg AudioFilter.
 
-	Mu       sync.Mutex
-	Stream   *dca.StreamingSession
-	stopChan chan bool
-	skipChan chan bool
+	Mu             sync.Mutex
+	Stream         *dca.StreamingSession
+	stopChan       chan bool
+	skipChan       chan bool
+	isReconnecting bool // Guards against multiple concurrent backgroundReconnect goroutines.
 }
 
 var (
@@ -109,11 +110,11 @@ func (s *Session) Join(sctx *discordgo.Session, guildID, voiceChannelID string) 
 	return nil
 }
 
-// reconnect attempts to re-establish the voice WebSocket connection to the channel
-// the bot was last joined to. Called automatically when VoiceClient.Ready is false
-// at the start of a track (typically after a Discord voice server migration).
+// reconnect attempts to re-establish the voice WebSocket connection, retrying
+// up to 3 times with a 5-second gap between attempts. This handles the common
+// case of a brief Gateway drop where the voice server needs a moment to settle.
 //
-// Returns an error if VoiceChannelID is not set or ChannelVoiceJoin fails.
+// Returns an error only if all attempts fail.
 func (s *Session) reconnect(sctx *discordgo.Session) error {
 	s.Mu.Lock()
 	channelID := s.VoiceChannelID
@@ -124,26 +125,34 @@ func (s *Session) reconnect(sctx *discordgo.Session) error {
 		return fmt.Errorf("no voice channel recorded for this session")
 	}
 
-	log.Printf("[player] voice not ready — reconnecting to channel %s in guild %s", channelID, guildID)
-	vc, err := sctx.ChannelVoiceJoin(guildID, channelID, false, false)
-	if err != nil {
-		return fmt.Errorf("ChannelVoiceJoin failed: %w", err)
+	const maxAttempts = 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		log.Printf("[player] reconnect attempt %d/%d — channel %s guild %s", attempt, maxAttempts, channelID, guildID)
+		vc, err := sctx.ChannelVoiceJoin(guildID, channelID, false, false)
+		if err == nil {
+			s.Mu.Lock()
+			s.VoiceClient = vc
+			s.Mu.Unlock()
+			log.Printf("[player] reconnect succeeded on attempt %d", attempt)
+			return nil
+		}
+		log.Printf("[player] reconnect attempt %d failed: %v", attempt, err)
+		if attempt < maxAttempts {
+			time.Sleep(5 * time.Second)
+		}
 	}
-
-	s.Mu.Lock()
-	s.VoiceClient = vc
-	s.Mu.Unlock()
-	return nil
+	return fmt.Errorf("all %d reconnect attempts failed", maxAttempts)
 }
 
-func (s *Session) Leave() {
+// Disconnect leaves the voice channel and clears the entire session state
+// including the queue. Called by the !leave command.
+func (s *Session) Disconnect() {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
-	
+
 	if s.IsPlaying {
 		s.stopChan <- true
 	}
-	
 	if s.VoiceClient != nil {
 		s.VoiceClient.Disconnect()
 		s.VoiceClient = nil
@@ -153,9 +162,132 @@ func (s *Session) Leave() {
 	s.History = []*youtube.Track{}
 	s.SearchMemory = []*youtube.Track{}
 	s.CurrentTrack = nil
+	s.VoiceChannelID = ""
 }
 
-// AddQueue mathematically appends a newly extracted YouTube payload strictly inside the server boundary completely.
+// Leave disconnects from voice but preserves the queue so playback can be
+// resumed later with !join + !resume. Called when a voice drop is detected
+// and cannot be automatically recovered.
+func (s *Session) Leave() {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	if s.IsPlaying {
+		s.stopChan <- true
+	}
+	if s.VoiceClient != nil {
+		s.VoiceClient.Disconnect()
+		s.VoiceClient = nil
+	}
+	s.IsPlaying = false
+	// Queue, History, and CurrentTrack are intentionally preserved so the
+	// user can resume with !resume after re-joining.
+	if s.CurrentTrack != nil {
+		s.Queue = append([]*youtube.Track{s.CurrentTrack}, s.Queue...)
+		s.CurrentTrack = nil
+	}
+}
+
+// Resume resumes playback of the existing queue using the provided Discord
+// session. Returns false if the queue is empty or voice is not connected.
+func (s *Session) Resume(sctx *discordgo.Session) bool {
+	s.Mu.Lock()
+	hasQueue := len(s.Queue) > 0
+	hasVoice := s.VoiceClient != nil
+	s.Mu.Unlock()
+
+	if !hasQueue || !hasVoice {
+		return false
+	}
+	s.PlayQueue(sctx)
+	return true
+}
+// backgroundReconnect is launched as a goroutine when all immediate reconnect
+// attempts fail (e.g. because the Discord Gateway itself was still recovering).
+// It retries the voice connection every 30 seconds for up to ~5 minutes and,
+// on success, automatically resumes the queue without any user intervention.
+//
+// Only one instance runs per Session at a time; the isReconnecting flag prevents
+// double-launches if two tracks fail in quick succession.
+func (s *Session) backgroundReconnect(sctx *discordgo.Session) {
+	s.Mu.Lock()
+	if s.isReconnecting {
+		s.Mu.Unlock()
+		return // another goroutine is already handling this
+	}
+	s.isReconnecting = true
+	s.Mu.Unlock()
+
+	defer func() {
+		s.Mu.Lock()
+		s.isReconnecting = false
+		s.Mu.Unlock()
+	}()
+
+	const (
+		retryInterval = 30 * time.Second
+		maxRetries    = 10 // ~5 minutes total
+	)
+
+	for i := 1; i <= maxRetries; i++ {
+		time.Sleep(retryInterval)
+
+		s.Mu.Lock()
+		alreadyConnected := s.VoiceClient != nil && s.VoiceClient.Ready
+		hasQueue := len(s.Queue) > 0
+		s.Mu.Unlock()
+
+		// If someone already ran !join manually, just kick off playback.
+		if alreadyConnected {
+			if hasQueue {
+				s.PlayQueue(sctx)
+			}
+			return
+		}
+
+		// If the queue was explicitly cleared (!clear / !leave), give up.
+		if !hasQueue {
+			return
+		}
+
+		log.Printf("[player] background reconnect attempt %d/%d", i, maxRetries)
+		if err := s.reconnect(sctx); err != nil {
+			log.Printf("[player] background reconnect attempt %d failed: %v", i, err)
+			continue
+		}
+
+		// Give the WebSocket handshake a moment before checking Ready.
+		time.Sleep(2 * time.Second)
+
+		s.Mu.Lock()
+		ready := s.VoiceClient != nil && s.VoiceClient.Ready
+		ch := s.TextChannel
+		qLen := len(s.Queue)
+		s.Mu.Unlock()
+
+		if !ready {
+			log.Printf("[player] background reconnect attempt %d: joined but not ready yet", i)
+			continue
+		}
+
+		// We're back — resume automatically.
+		if ch != "" {
+			sctx.ChannelMessageSend(ch, fmt.Sprintf("✅ Reconnected — resuming **%d** tracks.", qLen))
+		}
+		s.PlayQueue(sctx)
+		return
+	}
+
+	// Exhausted all background retries.
+	s.Mu.Lock()
+	ch := s.TextChannel
+	s.Mu.Unlock()
+	if ch != "" {
+		sctx.ChannelMessageSend(ch,
+			"⚠️ Could not reconnect after ~5 minutes. Your queue is still saved — use `!join` then `!resume` to continue manually.")
+	}
+}
+
 func (s *Session) AddQueue(track *youtube.Track) {
 	s.Mu.Lock()
 	s.Queue = append(s.Queue, track)
@@ -318,32 +450,41 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 			sctx.ChannelMessageSend(s.TextChannel, "🔄 Voice disconnected — attempting reconnect...")
 		}
 		if err := s.reconnect(sctx); err != nil {
-			s.sendError(sctx, fmt.Sprintf("Could not reconnect to voice (%v) — stopping playback.", err))
+			// All immediate attempts failed (Gateway likely still recovering).
+			// Preserve the queue and launch a background goroutine that will
+			// keep retrying and auto-resume once the connection is back.
 			s.Mu.Lock()
 			s.IsPlaying = false
+			s.Queue = append([]*youtube.Track{track}, s.Queue...)
 			s.CurrentTrack = nil
-			s.Queue = []*youtube.Track{}
 			s.Mu.Unlock()
+			if sctx != nil && s.TextChannel != "" {
+				sctx.ChannelMessageSend(s.TextChannel,
+					"⚠️ Voice lost — retrying in the background every 30s. Playback will resume automatically when the connection is restored.")
+			}
+			go s.backgroundReconnect(sctx)
 			return
 		}
 
-		// Give the voice WebSocket a moment to complete the handshake
-		// before we check Ready and attempt to send audio.
+		// Give the voice WebSocket a moment to complete the handshake.
 		time.Sleep(2 * time.Second)
 
 		if !s.VoiceClient.Ready {
-			s.sendError(sctx, "Reconnected but voice is still not ready — stopping playback.")
 			s.Mu.Lock()
 			s.IsPlaying = false
+			s.Queue = append([]*youtube.Track{track}, s.Queue...)
 			s.CurrentTrack = nil
-			s.Queue = []*youtube.Track{}
 			s.Mu.Unlock()
+			if sctx != nil && s.TextChannel != "" {
+				sctx.ChannelMessageSend(s.TextChannel,
+					"⚠️ Rejoined voice but connection not ready — retrying in the background every 30s.")
+			}
+			go s.backgroundReconnect(sctx)
 			return
 		}
 
 		// Reconnect succeeded — put this track back at the front of the queue
-		// and return. PlayQueue's loop will dequeue it and call playTrack again
-		// with a live voice connection.
+		// and return. PlayQueue's loop will dequeue it and call playTrack again.
 		s.Mu.Lock()
 		s.Queue = append([]*youtube.Track{track}, s.Queue...)
 		s.CurrentTrack = nil

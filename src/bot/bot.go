@@ -104,24 +104,58 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
+// trackExceedsLimit reports whether a track's duration exceeds the configured
+// maximum. Tracks with Duration == 0 (unknown) are always allowed through to
+// avoid incorrectly skipping live streams or tracks yt-dlp couldn't measure.
+func trackExceedsLimit(t *youtube.Track) bool {
+	if config.MaxTrackDuration <= 0 || t.Duration <= 0 {
+		return false
+	}
+	return t.Duration > config.MaxTrackDuration
+}
+
+// fmtDuration formats a duration in seconds as m:ss or h:mm:ss.
+func fmtDuration(secs float64) string {
+	total := int(secs)
+	h := total / 3600
+	m := (total % 3600) / 60
+	s := total % 60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
+}
+
+// cmdJoin connects the bot to the caller's current voice channel.
+// If there is a paused queue waiting, the user is prompted to use !resume.
 func cmdJoin(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
 	state, err := s.State.VoiceState(m.GuildID, m.Author.ID)
 	if err != nil {
 		s.ChannelMessageSend(m.ChannelID, "❌ You must be in a voice channel to use this.")
 		return
 	}
-	
-	err = sess.Join(s, m.GuildID, state.ChannelID)
-	if err != nil {
-		s.ChannelMessageSend(m.ChannelID, "❌ Failed to bridge into Voice Channel!")
+
+	if err := sess.Join(s, m.GuildID, state.ChannelID); err != nil {
+		s.ChannelMessageSend(m.ChannelID, "❌ Failed to join the voice channel.")
 		return
 	}
-	s.ChannelMessageSend(m.ChannelID, "🔊 Joined actively mapped!")
+
+	// Check whether there is a paused queue the user might want to resume.
+	sess.Mu.Lock()
+	queueLen := len(sess.Queue)
+	sess.Mu.Unlock()
+
+	if queueLen > 0 {
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("🔊 Joined! There are **%d** tracks in the queue. Use `!resume` to continue.", queueLen))
+	} else {
+		s.ChannelMessageSend(m.ChannelID, "🔊 Joined.")
+	}
 }
 
+// cmdLeave disconnects the bot and clears the queue entirely.
 func cmdLeave(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
-	sess.Leave()
-	s.ChannelMessageSend(m.ChannelID, "👋 Unbound successfully.")
+	sess.Disconnect()
+	s.ChannelMessageSend(m.ChannelID, "👋 Left the voice channel. Queue cleared.")
 }
 
 func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session, shuffle bool) {
@@ -167,7 +201,7 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 		sess.Join(s, m.GuildID, state.ChannelID)
 	}
 
-	s.ChannelMessageSend(m.ChannelID, "⏳ Locating manifest streams dynamically...")
+	s.ChannelMessageSend(m.ChannelID, "⏳ Fetching track info...")
 
 	var tracks []*youtube.Track
 	if strings.Contains(query, "playlist") || strings.Contains(query, "list=") {
@@ -175,35 +209,40 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 		doneChan := make(chan bool)
 
 		go youtube.ExtractPlaylistAsync(query, shuffle, ch, doneChan)
-
-		s.ChannelMessageSend(m.ChannelID, "⏳ Intercepting playlist structures asynchronously...")
+		s.ChannelMessageSend(m.ChannelID, "⏳ Loading playlist...")
 
 		isFirst := true
-		count := 0
+		queued := 0
+		skipped := 0
 
-		// Spin independent background proxy directly into memory looping
 		go func() {
 			for {
 				select {
 				case t := <-ch:
+					if trackExceedsLimit(t) {
+						// Count silently — reporting every skipped track in a
+						// large playlist would flood the channel.
+						skipped++
+						continue
+					}
 					sess.AddQueue(t)
-					count++
-					
-					// Instantaneously branch off natively!
+					queued++
 					if isFirst {
 						isFirst = false
-						s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("▶️ Actively locked physical stream essentially instantly: **%s**! Parsing remaining dynamically...", t.Title))
-						// Begin executing while we natively scrape the others gracefully.
+						s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("▶️ Starting with **%s** — loading the rest...", t.Title))
 						sess.PlayQueue(s)
 					}
 				case <-doneChan:
-					s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Playlist structurally fully mapped! Queued **%d** physical streams natively.", count))
+					msg := fmt.Sprintf("✅ Playlist loaded — **%d** tracks queued.", queued)
+					if skipped > 0 {
+						limit := fmtDuration(config.MaxTrackDuration)
+						msg += fmt.Sprintf(" (%d skipped — over %s limit)", skipped, limit)
+					}
+					s.ChannelMessageSend(m.ChannelID, msg)
 					return
 				}
 			}
 		}()
-		
-		// Immediately drop out linearly!
 		return
 	} else if strings.HasPrefix(query, "http") {
 		var track *youtube.Track
@@ -216,15 +255,29 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 	}
 
 	if err != nil || len(tracks) == 0 {
-		s.ChannelMessageSend(m.ChannelID, "❌ Extraction execution failed structurally.")
+		s.ChannelMessageSend(m.ChannelID, "❌ Could not find that track.")
 		return
 	}
 
+	// Single-track path: report rejections immediately.
+	var allowed []*youtube.Track
 	for _, t := range tracks {
+		if trackExceedsLimit(t) {
+			s.ChannelMessageSend(m.ChannelID,
+				fmt.Sprintf("⏭️ Skipped **%s** (%s) — exceeds the %s limit.",
+					t.Title, fmtDuration(t.Duration), fmtDuration(config.MaxTrackDuration)))
+			continue
+		}
+		allowed = append(allowed, t)
+	}
+
+	if len(allowed) == 0 {
+		return
+	}
+	for _, t := range allowed {
 		sess.AddQueue(t)
 	}
-	
-	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Mapped **%d** frames directly into queue block.", len(tracks)))
+	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Added **%d** track(s) to the queue.", len(allowed)))
 	sess.PlayQueue(s)
 }
 
@@ -408,12 +461,21 @@ func cmdLoadQueue(s *discordgo.Session, m *discordgo.MessageCreate, args []strin
 	s.ChannelMessageSend(m.ChannelID, "⏳ Asynchronously proxying fresh CDN certificates organically...")
 	
 	go func() {
-		// Just directly map the legacy configurations functionally into the native payload queue!
-		// Memory streams actively extract exact stream data natively exactly when PlayQueue evaluates the track!
-		for _, legacyTrack := range q {
-			sess.AddQueue(legacyTrack)
+		queued := 0
+		skipped := 0
+		for _, t := range q {
+			if trackExceedsLimit(t) {
+				skipped++
+				continue
+			}
+			sess.AddQueue(t)
+			queued++
 		}
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Intercepted **%d** streams natively bridging internal execution loops.", len(q)))
+		msg := fmt.Sprintf("✅ Loaded **%d** tracks from playlist.", queued)
+		if skipped > 0 {
+			msg += fmt.Sprintf(" (%d skipped — over %s limit)", skipped, fmtDuration(config.MaxTrackDuration))
+		}
+		s.ChannelMessageSend(m.ChannelID, msg)
 		sess.PlayQueue(s)
 	}()
 }
@@ -466,14 +528,44 @@ func cmdVolume(s *discordgo.Session, m *discordgo.MessageCreate, args []string, 
 	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("🔊 Volume permanently adjusted to **%d%%**. (Will actively reflect upon subsequent track slices).", v))
 }
 
+// cmdPause pauses the currently playing audio.
 func cmdPause(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
 	sess.SetPaused(true)
-	s.ChannelMessageSend(m.ChannelID, "⏸ Audio execution correctly sliced into physical pause.")
+	s.ChannelMessageSend(m.ChannelID, "⏸ Paused.")
 }
 
+// cmdResume handles two cases:
+//  1. Normal !resume after !pause — unpauses the DCA stream.
+//  2. Queue resume after a voice disconnect — restarts PlayQueue with the
+//     preserved queue. The bot must already be in a voice channel (!join first).
 func cmdResume(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
-	sess.SetPaused(false)
-	s.ChannelMessageSend(m.ChannelID, "▶ Audio pipeline natively unbound into execution.")
+	// If the stream is paused, unpause it.
+	sess.Mu.Lock()
+	stream := sess.Stream
+	isPlaying := sess.IsPlaying
+	queueLen := len(sess.Queue)
+	sess.Mu.Unlock()
+
+	if stream != nil && isPlaying {
+		sess.SetPaused(false)
+		s.ChannelMessageSend(m.ChannelID, "▶ Resumed.")
+		return
+	}
+
+	// Not currently playing — try to restart from the preserved queue.
+	if queueLen == 0 {
+		s.ChannelMessageSend(m.ChannelID, "❌ Nothing in the queue to resume.")
+		return
+	}
+	if sess.VoiceClient == nil {
+		s.ChannelMessageSend(m.ChannelID, "❌ Not connected to a voice channel. Use `!join` first.")
+		return
+	}
+	if ok := sess.Resume(s); !ok {
+		s.ChannelMessageSend(m.ChannelID, "❌ Could not resume (queue empty or not in voice).")
+		return
+	}
+	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("▶️ Resuming — **%d** tracks in queue.", queueLen))
 }
 
 // cmdShuffle randomizes the underlying array payload physically across the native Queue matrix.
