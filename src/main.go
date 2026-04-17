@@ -54,6 +54,7 @@ func main() {
 	}
 
 	dg.AddHandler(bot.OnMessageCreate)
+	dg.AddHandler(bot.OnVoiceStateUpdate)
 	dg.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsGuildVoiceStates | discordgo.IntentsGuilds | discordgo.IntentMessageContent
 
 	err = dg.Open()

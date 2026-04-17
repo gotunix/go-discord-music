@@ -84,6 +84,31 @@ func LoadQueue(guildID, name string) []*youtube.Track {
 	return pl[guildID][name]
 }
 
+const AutoSaveName = "autosave"
+
+func (s *Session) SaveCurrentState() {
+	s.Mu.Lock()
+	q := make([]*youtube.Track, 0, len(s.Queue)+1)
+	if s.CurrentTrack != nil {
+		q = append(q, s.CurrentTrack)
+	}
+	q = append(q, s.Queue...)
+	s.Mu.Unlock()
+
+	if len(q) > 0 {
+		SaveQueue(s.GuildID, AutoSaveName, q)
+	}
+}
+
+func (s *Session) LoadCurrentState() {
+	q := LoadQueue(s.GuildID, AutoSaveName)
+	if len(q) > 0 {
+		s.Mu.Lock()
+		s.Queue = q
+		s.Mu.Unlock()
+	}
+}
+
 func GetPlaylists(guildID string) []string {
 	pl := LoadPlaylists()
 	var names []string

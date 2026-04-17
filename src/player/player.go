@@ -106,7 +106,13 @@ func (s *Session) Join(sctx *discordgo.Session, guildID, voiceChannelID string) 
 	s.Mu.Lock()
 	s.VoiceClient = vc
 	s.VoiceChannelID = voiceChannelID
+	isEmpty := len(s.Queue) == 0 && s.CurrentTrack == nil
 	s.Mu.Unlock()
+
+	if isEmpty {
+		s.LoadCurrentState()
+	}
+
 	return nil
 }
 

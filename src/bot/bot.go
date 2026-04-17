@@ -104,6 +104,50 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
+func OnVoiceStateUpdate(s *discordgo.Session, v *discordgo.VoiceStateUpdate) {
+	if v.BeforeUpdate == nil {
+		return
+	}
+
+	// We only care if someone leaves a channel
+	if v.BeforeUpdate.ChannelID == "" || (v.VoiceState != nil && v.BeforeUpdate.ChannelID == v.ChannelID) {
+		return
+	}
+
+	guildID := v.GuildID
+	sess := player.GetSession(guildID)
+
+	sess.Mu.Lock()
+	vcID := sess.VoiceChannelID
+	sess.Mu.Unlock()
+
+	if vcID == "" || v.BeforeUpdate.ChannelID != vcID {
+		return
+	}
+
+	// Someone left our channel. Check if anyone is left.
+	g, err := s.State.Guild(guildID)
+	if err != nil {
+		return
+	}
+
+	count := 0
+	for _, vs := range g.VoiceStates {
+		if vs.ChannelID == vcID {
+			count++
+		}
+	}
+
+	// If count is 1, it means only the bot is left.
+	if count <= 1 {
+		sess.SaveCurrentState()
+		sess.Leave()
+		if sess.TextChannel != "" {
+			s.ChannelMessageSend(sess.TextChannel, "💤 Everyone left the voice channel. Pausing and saving queue.")
+		}
+	}
+}
+
 // trackExceedsLimit reports whether a track's duration exceeds the configured
 // maximum. Tracks with Duration == 0 (unknown) are always allowed through to
 // avoid incorrectly skipping live streams or tracks yt-dlp couldn't measure.
