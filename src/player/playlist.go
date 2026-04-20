@@ -84,6 +84,19 @@ func LoadQueue(guildID, name string) []*youtube.Track {
 	return pl[guildID][name]
 }
 
+func DeletePlaylist(guildID, name string) bool {
+	pl := LoadPlaylists()
+	if pl[guildID] == nil {
+		return false
+	}
+	if _, exists := pl[guildID][name]; !exists {
+		return false
+	}
+	delete(pl[guildID], name)
+	SavePlaylists(pl)
+	return true
+}
+
 const AutoSaveName = "autosave"
 
 func (s *Session) SaveCurrentState() {

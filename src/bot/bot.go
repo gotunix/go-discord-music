@@ -538,6 +538,20 @@ func cmdSavedPlaylists(s *discordgo.Session, m *discordgo.MessageCreate, sess *p
 	s.ChannelMessageSend(m.ChannelID, msg)
 }
 
+func cmdDeletePlaylist(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session) {
+	if len(args) < 2 {
+		s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!deleteplaylist <name>`")
+		return
+	}
+
+	name := strings.Join(args[1:], " ")
+	if player.DeletePlaylist(m.GuildID, name) {
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("🗑️ Deleted playlist: `%s`", name))
+	} else {
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("❌ Playlist not found: `%s`", name))
+	}
+}
+
 func cmdHelp(s *discordgo.Session, m *discordgo.MessageCreate) {
 	embed := &discordgo.MessageEmbed{
 		Title: "🎵 Music Bot Commands",
@@ -545,7 +559,7 @@ func cmdHelp(s *discordgo.Session, m *discordgo.MessageCreate) {
 		Color: 0x3498db,
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: "📻 Playback", Value: "`!play <URL or Search>` - Extract audio (auto-shuffles playlists)\n`!search <Query>` - Locate TOP 20 native streams organically\n`!playing` (`!np`) - Display exactly actively mapped seamlessly physical active tracker arrays natively.\n`!skip` (`!next`) - Skip cleanly across current sequence\n`!previous` (`!prev`) - Rigidly cleanly reverse payload sequence\n`!stop` - Terminate explicitly\n`!pause` - Pause cleanly\n`!resume` - Unpause linearly", Inline: false},
-			{Name: "📝 Queue & State", Value: "`!queue` - Output active streams\n`!clear` - Wipe entire queue\n`!move <From> <To>` - Move specific natively mapped sequence intuitively\n`!volume <1-100>` - Alter Audio Loudness statically\n`!shuffle` - Randomize active arrays naturally\n`!savequeue <name>` - Persist purely physically\n`!loadqueue <name>` - Load organically natively\n`!savedplaylists` - Check persistent logs", Inline: false},
+			{Name: "📝 Queue & State", Value: "`!queue [all]` - Output active streams (shows first 15, or all with `all`)\n`!clear` - Wipe entire queue\n`!move <From> <To>` - Move specific natively mapped sequence intuitively\n`!volume <1-100>` - Alter Audio Loudness statically\n`!shuffle` - Randomize active arrays naturally\n`!savequeue <name>` - Persist purely physically\n`!loadqueue <name>` - Load organically natively\n`!deleteplaylist <name>` - Delete a saved playlist\n`!savedplaylists` - Check persistent logs", Inline: false},
 			{Name: "⚙️ Core Setup", Value: "`!join` - Mount voice\n`!leave` - Unbind voice\n`!version` - Core execution metrics\n`!help` - Output this cleanly mapped array", Inline: false},
 		},
 		Footer: &discordgo.MessageEmbedFooter{Text: "Golang Native Edition"},
