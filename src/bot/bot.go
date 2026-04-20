@@ -526,7 +526,7 @@ func cmdLoadQueue(s *discordgo.Session, m *discordgo.MessageCreate, args []strin
 	}()
 }
 
-func cmdSavedPlaylists(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
+func cmdListQueue(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Session) {
 	names := player.GetPlaylists(m.GuildID)
 	if len(names) == 0 {
 		s.ChannelMessageSend(m.ChannelID, "💭 No customized streams organically accessible physically.")
@@ -540,17 +540,17 @@ func cmdSavedPlaylists(s *discordgo.Session, m *discordgo.MessageCreate, sess *p
 	s.ChannelMessageSend(m.ChannelID, msg)
 }
 
-func cmdDeletePlaylist(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session) {
+func cmdDeleteQueue(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session) {
 	if len(args) < 2 {
-		s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!deleteplaylist <name>`")
+		s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!delqueue <name>`")
 		return
 	}
 
 	name := strings.Join(args[1:], " ")
 	if player.DeletePlaylist(m.GuildID, name) {
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("🗑️ Deleted playlist: `%s`", name))
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("🗑️ Deleted saved queue: `%s`", name))
 	} else {
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("❌ Playlist not found: `%s`", name))
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("❌ Saved queue not found: `%s`", name))
 	}
 }
 
