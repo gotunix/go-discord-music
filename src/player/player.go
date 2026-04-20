@@ -509,7 +509,9 @@ func (s *Session) playTrack(sctx *discordgo.Session, track *youtube.Track) {
 	// Set volume=256 so dca passes -vol 256, which our ffmpeg-wrapper strips (it's deprecated
 	// in FFmpeg 6+). We apply the actual volume through the AudioFilter instead.
 	options.Volume = 256
-	options.AudioFilter = fmt.Sprintf("volume=%f", float64(s.Volume)/100.0)
+	// Apply single-pass EBU R128 normalization (loudnorm) before user volume to ensure
+	// consistent levels across different tracks.
+	options.AudioFilter = fmt.Sprintf("loudnorm=I=-16:TP=-1.5:LRA=11,volume=%f", float64(s.Volume)/100.0)
 
 	target := track.Webpage
 	if target == "" {
