@@ -89,10 +89,10 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		cmdSaveQueue(s, m, args, sess)
 	case "loadqueue":
 		cmdLoadQueue(s, m, args, sess)
-	case "deleteplaylist", "delplaylist":
-		cmdDeletePlaylist(s, m, args, sess)
-	case "savedplaylists":
-		cmdSavedPlaylists(s, m, sess)
+	case "delqueue", "delq":
+		cmdDeleteQueue(s, m, args, sess)
+	case "listqueue", "listq":
+		cmdListQueue(s, m, sess)
 	case "volume", "vol", "v":
 		cmdVolume(s, m, args, sess)
 	case "join":
