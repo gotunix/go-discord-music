@@ -128,5 +128,6 @@ func GetPlaylists(guildID string) []string {
 	for k := range pl[guildID] {
 		names = append(names, k)
 	}
+	sort.Strings(names)
 	return names
 }
