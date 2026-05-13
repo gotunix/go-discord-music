@@ -250,7 +250,10 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 	s.ChannelMessageSend(m.ChannelID, "⏳ Fetching track info...")
 
 	var tracks []*youtube.Track
-	if strings.Contains(query, "playlist") || strings.Contains(query, "list=") {
+	// Only load as a playlist if it's a dedicated playlist URL or if it doesn't
+	// contain a specific video ID (v=). This prevents video URLs with a list=
+	// parameter from incorrectly triggering the playlist loader.
+	if strings.Contains(query, "playlist?list=") || (strings.Contains(query, "list=") && !strings.Contains(query, "v=")) {
 		ch := make(chan *youtube.Track, 250)
 		doneChan := make(chan bool)
 
