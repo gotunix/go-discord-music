@@ -60,7 +60,9 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	switch cmd {
 	case "play", "p":
-		cmdPlay(s, m, args, sess, true)
+		cmdPlay(s, m, args, sess, true, true)
+	case "playlist", "pl":
+		cmdPlay(s, m, args, sess, true, false)
 	case "playing", "np":
 		cmdPlaying(s, m, sess)
 	case "search":
@@ -204,9 +206,13 @@ func cmdLeave(s *discordgo.Session, m *discordgo.MessageCreate, sess *player.Ses
 	s.ChannelMessageSend(m.ChannelID, "👋 Left the voice channel. Queue cleared.")
 }
 
-func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session, shuffle bool) {
+func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, sess *player.Session, shuffle bool, forceSingle bool) {
 	if len(args) < 2 {
-		s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!play <URL or Search>`")
+		if forceSingle {
+			s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!play <URL or Search>`")
+		} else {
+			s.ChannelMessageSend(m.ChannelID, "❌ Usage: `!playlist <URL>`")
+		}
 		return
 	}
 
@@ -250,16 +256,11 @@ func cmdPlay(s *discordgo.Session, m *discordgo.MessageCreate, args []string, se
 	s.ChannelMessageSend(m.ChannelID, "⏳ Fetching track info...")
 
 	var tracks []*youtube.Track
-	// Only load as a playlist if it's an HTTP URL and it's a dedicated playlist
-	// (contains 'playlist' or 'list=') but DOES NOT target a specific video
-	// (contains 'watch' or 'youtu.be'). This ensures that video URLs with a
-	// playlist context are treated as single tracks.
+	// Only load as a playlist if forceSingle is false.
 	isURL := strings.HasPrefix(query, "http")
-	isPlaylist := (strings.Contains(query, "playlist") || strings.Contains(query, "list=")) &&
-		!strings.Contains(query, "watch") &&
-		!strings.Contains(query, "youtu.be")
+	isPlaylist := !forceSingle && isURL && (strings.Contains(query, "playlist") || strings.Contains(query, "list="))
 
-	if isURL && isPlaylist {
+	if isPlaylist {
 		ch := make(chan *youtube.Track, 250)
 		doneChan := make(chan bool)
 
@@ -569,7 +570,7 @@ func cmdHelp(s *discordgo.Session, m *discordgo.MessageCreate) {
 		Description: "A high-performance Golang audio architecture directly bridging Discord.",
 		Color: 0x3498db,
 		Fields: []*discordgo.MessageEmbedField{
-			{Name: "📻 Playback", Value: "`!play <URL or Search>` - Extract audio (auto-shuffles playlists)\n`!search <Query>` - Locate TOP 20 native streams organically\n`!playing` (`!np`) - Display exactly actively mapped seamlessly physical active tracker arrays natively.\n`!skip` (`!next`) - Skip cleanly across current sequence\n`!previous` (`!prev`) - Rigidly cleanly reverse payload sequence\n`!stop` - Terminate explicitly\n`!pause` - Pause cleanly\n`!resume` - Unpause linearly", Inline: false},
+			{Name: "📻 Playback", Value: "`!play <URL or Search>` - Extract single track (even if URL is a playlist)\n`!playlist <URL>` - Extract entire playlist\n`!search <Query>` - Locate TOP 20 native streams organically\n`!playing` (`!np`) - Display exactly actively mapped seamlessly physical active tracker arrays natively.\n`!skip` (`!next`) - Skip cleanly across current sequence\n`!previous` (`!prev`) - Rigidly cleanly reverse payload sequence\n`!stop` - Terminate explicitly\n`!pause` - Pause cleanly\n`!resume` - Unpause linearly", Inline: false},
 			{Name: "📝 Queue & State", Value: "`!queue [all]` - Output active streams (shows first 15, or all with `all`)\n`!clear` - Wipe entire queue\n`!move <From> <To>` - Move specific natively mapped sequence intuitively\n`!volume <1-100>` - Alter Audio Loudness statically\n`!shuffle` - Randomize active arrays naturally\n`!savequeue <name>` - Persist purely physically\n`!loadqueue <name>` - Load organically natively\n`!delqueue <name>` - Delete a saved queue\n`!listqueue` - Check persistent logs", Inline: false},
 			{Name: "⚙️ Core Setup", Value: "`!join` - Mount voice\n`!leave` - Unbind voice\n`!version` - Core execution metrics\n`!help` - Output this cleanly mapped array", Inline: false},
 		},
